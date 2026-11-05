@@ -26,7 +26,7 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, QProcess, QProcessEnvironment, QRect, Qt, QTimer, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QProcess, QProcessEnvironment, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QCursor, QGuiApplication, QPainter, QPixmap
 from PySide6.QtWidgets import QInputDialog, QMenu, QWidget
 
@@ -414,6 +414,23 @@ class Pet(QWidget):
         wanted = self._effective()
         if wanted != self.look:
             QTimer.singleShot(0, lambda: self._wear(wanted, announce=False, greet=True))   # образ из прошлого раза
+
+    def shutdown(self) -> None:
+        """Перед выходом: всё остановить и удалить окна, пока Qt ещё жив.
+
+        Иначе Python добирает окна Кая сборщиком мусора уже после закрытия Qt — и процесс падает на выходе.
+        """
+        for timer in (self._timer, self._watch, self._perch, self._ear):
+            timer.stop()
+        if self._export is not None:
+            self._export.finished.disconnect()
+            self._export.kill()
+            self._export.waitForFinished(2000)
+            self._export = None
+        _meter[0] = None                       # отпустить индикатор громкости, пока COM ещё работает
+        self.bubble.deleteLater()
+        self.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 
     # --- гардероб: вид, цвет, аксессуары, сезонные вещи ---
     def looks_root(self) -> Path:

@@ -56,7 +56,11 @@ def main() -> int:
     pet.show()
     if QSystemTrayIcon.isSystemTrayAvailable():
         app._tray = tray(app, pet)
-    return app.exec()
+    code = app.exec()
+    if getattr(app, "_tray", None):
+        app._tray.hide()
+    pet.shutdown()                         # окна — до закрытия Qt, иначе падение на выходе
+    return code
 
 
 if __name__ == "__main__":

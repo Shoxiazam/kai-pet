@@ -44,7 +44,7 @@ def pet(monkeypatch, tmp_path, played):
     p.once = None
     monkeypatch.setattr(p, "_cursor", lambda: QPoint(-5000, -5000))   # курсор далеко
     yield p
-    p.hide()
+    p.shutdown()                       # окна — до закрытия Qt, иначе падение на выходе
 
 
 # --- крепление и поворот ---
