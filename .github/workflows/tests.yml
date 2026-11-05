@@ -20,4 +20,13 @@ jobs:
       - name: Character self-check
         run: node character/test.mjs
       - name: Tests
-        run: python -m pytest -q
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest -q -rf --tb=short -o faulthandler_timeout=60 2>&1 | tee pytest.log
+      - name: Show failures as annotations
+        if: failure()
+        shell: bash
+        run: |
+          grep -E "^(FAILED|ERROR)|Error|assert|Timeout|fatal" pytest.log | head -25 | sed 's/^/::error::/'
+          tail -5 pytest.log | sed 's/^/::warning::/'
