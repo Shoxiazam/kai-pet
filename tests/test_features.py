@@ -1,0 +1,207 @@
+"""Кай: крепление и поворот, музыка, поглаживание, печенька и дружба, сезонные образы, звуки, автозапуск, трей."""
+import datetime as dt
+import os
+import sys
+from pathlib import Path
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import pytest  # noqa: E402
+from PySide6.QtCore import QPoint, QPointF, QRect, Qt  # noqa: E402
+from PySide6.QtGui import QWheelEvent  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+from kai_pet import pet as pet_module  # noqa: E402
+from kai_pet.pet import (effective_look, friend_level, load_state, perch_on, season_key,  # noqa: E402
+                         snap_edge)
+
+
+class Winter(dt.date):
+    @classmethod
+    def today(cls):
+        return cls(2026, 12, 20)
+
+
+@pytest.fixture
+def played(monkeypatch):
+    out = []
+    monkeypatch.setattr(pet_module.sounds, "play", lambda path: out.append(path.name))
+    return out
+
+
+@pytest.fixture
+def pet(monkeypatch, tmp_path, played):
+    QApplication.instance() or QApplication([])
+    monkeypatch.setenv("KAI_PET_STATE", str(tmp_path / "state.json"))   # память — своя у каждого теста
+    monkeypatch.setattr(pet_module, "active_window", lambda: ("", "explorer.exe"))
+    monkeypatch.setattr(pet_module, "active_window_rect", lambda: None)
+    monkeypatch.setattr(pet_module, "input_idle_s", lambda: 0.0)
+    monkeypatch.setattr(pet_module, "audio_peak", lambda: 0.0)
+    monkeypatch.setattr(pet_module, "background_mood", lambda app, *_: app or "idle")
+    p = pet_module.Pet()
+    p.once = None
+    monkeypatch.setattr(p, "_cursor", lambda: QPoint(-5000, -5000))   # курсор далеко
+    yield p
+    p.hide()
+
+
+# --- крепление и поворот ---
+def test_snap_edge_and_perch_rules():
+    area = QRect(0, 0, 1536, 824)
+    assert snap_edge(20, 300, 150, area) == (0, 300, "left")
+    assert snap_edge(600, 10, 150, area) == (600, 0, "top")
+    assert snap_edge(600, 300, 150, area) is None
+    x, y = perch_on((250, 500, 1500, 1000), 1.25, 150, area)
+    assert y == int(400 - 150 * 0.93) and 200 <= x <= 1050
+    assert perch_on((0, 0, 1920, 1040), 1.25, 150, area) is None      # развёрнуто во весь экран
+
+
+def test_rotate_drop_and_dock_are_remembered(pet):
+    pet.set_angle(450)
+    assert pet.angle == 90
+    pet._tick()
+    pet.grab()                                            # поворот рисуется без ошибок
+    pet.wheelEvent(QWheelEvent(QPointF(5, 5), QPointF(5, 5), QPoint(0, 0), QPoint(0, -120), Qt.NoButton,
+                               Qt.ControlModifier, Qt.NoScrollPhase, False))
+    assert pet.angle == 105 and load_state()["angle"] == 105
+    area = pet._area()
+    pet.move(area.left() + 10, area.top() + 200)
+    pet._dropped()
+    assert pet.x() == area.left() and pet.angle == 90 and load_state()["dock"] == "free"
+    pet.set_dock("window")
+    pet._follow_window()                                  # окна нет — в угол
+    assert pet.pos() == pet._corner() and pet.angle == 0
+
+
+# --- музыка ---
+def test_dances_only_to_steady_sound(pet, monkeypatch):
+    levels = iter([0.3] * 3 + [0.0] * 5 + [0.2] * 8)
+    monkeypatch.setattr(pet_module, "audio_peak", lambda: next(levels))
+    for _ in range(8):
+        pet._listen()
+    assert not pet.music                                  # короткий «дзынь» — не музыка
+    for _ in range(8):
+        pet._listen()
+    assert pet.music and pet.current() == "groove"
+    pet.dance_on = False
+    pet._listen()
+    assert not pet.music                                  # выключили в меню — не танцует
+
+
+def test_audio_peak_never_crashes(monkeypatch):
+    monkeypatch.setattr(pet_module, "_meter", [None, 0.0])
+    assert 0.0 <= pet_module.audio_peak() <= 1.0          # на настоящем ноутбуке или без pycaw — число, не ошибка
+
+
+# --- погладить, угостить, дружба ---
+def test_stroking_makes_kai_purr(pet, played):
+    pet.show()
+    for i in range(40):
+        QTest.mouseMove(pet, QPoint(20 + (i % 2) * 100, 60 + (i % 3) * 5))
+    assert pet.current() == "purr" and "purr.wav" in played and pet.friend == 1
+    assert pet._press is None                             # поглаживание — не перетаскивание
+
+
+def test_feed_once_a_day_and_friendship(pet, played):
+    pet.feed()
+    assert pet.current() == "eat" and "munch.wav" in played and pet.friend == 3
+    pet.once = None
+    pet.feed()
+    assert pet.current() != "eat" and "наелся" in pet.bubble.text.text() and pet.friend == 3
+    assert load_state()["friend"] == 3 and friend_level(3) == 0 and friend_level(5) == 1
+    pet._befriend(2)
+    assert "Мы стали ещё ближе" in pet.bubble.text.text()
+    assert "дней вместе: 1" in pet.friendship_text()
+
+
+def test_click_meows_and_sounds_toggle(pet, played):
+    QTest.mouseClick(pet, Qt.LeftButton)
+    assert played == ["meow.wav"]
+    pet._set_flag("sounds", "sounds_on", False)
+    QTest.mouseClick(pet, Qt.LeftButton)
+    assert played == ["meow.wav"]                          # выключили — тишина
+    assert load_state()["sounds"] is False
+
+
+def test_sound_files_and_new_animations_exist():
+    for name in ("meow", "purr", "munch"):
+        assert (pet_module.ASSETS / "sounds" / f"{name}.wav").is_file()
+    for anim in ("groove", "purr", "eat"):
+        assert (pet_module.ASSETS / "frames" / anim).is_dir()
+
+
+# --- сезонные образы ---
+def test_effective_look_seasons():
+    winter, summer = dt.date(2026, 12, 20), dt.date(2026, 7, 1)
+    assert effective_look({}, winter)["acc"] == ["hat", "scarf"]
+    assert effective_look({}, summer)["acc"] == []
+    assert effective_look({"acc": ["crown"]}, winter)["acc"] == ["crown", "scarf"]   # голова занята — только шарф
+    assert effective_look({}, dt.date(2026, 3, 21), birthday="03-21")["acc"] == ["crown"]
+    assert effective_look({}, winter, winter_off=season_key(winter))["acc"] == []
+    assert effective_look({}, winter, seasonal=False)["acc"] == []
+    assert season_key(dt.date(2027, 2, 1)) == "winter-2026" and season_key(summer) == ""
+
+
+def test_removing_seasonal_item_keeps_it_off(pet, monkeypatch):
+    monkeypatch.setattr(pet_module.datetime, "date", Winter)
+    started = []
+    monkeypatch.setattr(pet, "_start_export", lambda look, announce: started.append(look))
+    assert pet._effective()["acc"] == ["hat", "scarf"]
+    pet.change_look({"remove": "hat"})
+    assert load_state()["winter_off"] == "winter-2026" and pet._effective()["acc"] == []
+
+
+def test_season_greeting_once(pet, monkeypatch):
+    monkeypatch.setattr(pet_module.datetime, "date", Winter)
+    pet._greet_season({"kind": "cat", "color": "gray", "acc": ["hat", "scarf"]})
+    assert "Зима" in pet.bubble.text.text()
+    pet.bubble.text.setText("")
+    pet._greet_season({"kind": "cat", "color": "gray", "acc": ["hat", "scarf"]})
+    assert pet.bubble.text.text() == ""                   # второй раз за сезон не повторяет
+
+
+# --- автозапуск (на тестовом ключе реестра, настоящий не трогаем) и трей ---
+@pytest.mark.skipif(sys.platform != "win32", reason="реестр Windows")
+def test_autostart_on_off(monkeypatch):
+    import winreg
+    from kai_pet import autostart
+    monkeypatch.setattr(autostart, "RUN_KEY", r"Software\KaiPetTest\Run")
+    try:
+        autostart.set_enabled(True)
+        assert autostart.enabled()
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, autostart.RUN_KEY) as key:
+            value = winreg.QueryValueEx(key, autostart.NAME)[0]
+        assert "run_kai.pyw" in value
+        autostart.set_enabled(False)
+        autostart.set_enabled(False)                      # повторное выключение не падает
+        assert not autostart.enabled()
+    finally:
+        for sub in (r"Software\KaiPetTest\Run", r"Software\KaiPetTest"):
+            try:
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, sub)
+            except OSError:
+                pass
+
+
+def test_tray_builds(pet):
+    from kai_pet.__main__ import tray
+    icon = tray(QApplication.instance(), pet)
+    titles = [a.text() for a in icon.contextMenu().actions()]
+    assert "Запускать вместе с Windows" in titles and "Выход" in titles
+    icon.hide()
+
+
+def test_menu_builds_with_everything(pet, monkeypatch):
+    """Меню собирается и в нём есть новые пункты (exec подменён, чтобы не ждать клика)."""
+    seen = []
+    monkeypatch.setattr(pet, "_show_menu", lambda menu, pos: seen.extend(x.text() for x in menu.actions()))
+
+    class Ev:
+        def globalPos(self):
+            return QPoint(0, 0)
+    pet.contextMenuEvent(Ev())
+    for title in ("Угостить печенькой", "Внешность", "Где сидеть", "Повернуть", "Настройки", "Выход"):
+        assert title in seen
+    assert any(t.startswith("Дружба:") for t in seen)

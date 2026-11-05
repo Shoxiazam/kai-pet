@@ -36,6 +36,10 @@ class Config:
     welcome_after_min: float = 30      # перерыв не короче — здоровается облачком
     break_hint_every_min: float = 60   # подсказка про перерыв не чаще раза в столько минут
     hints: bool = True                 # мягкие подсказки облачком
+    sounds: bool = True                # «мяу» на клик, мурчание, хруст печеньки (меняется и в меню)
+    dance_to_music: bool = True        # играет музыка — кивает в такт
+    seasonal: bool = True              # зимой сам надевает шапочку и шарф, в день рождения — корону
+    birthday: str = ""                 # ваш день рождения, "MM-DD", например "03-21"
     moods: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_MOODS))
 
 

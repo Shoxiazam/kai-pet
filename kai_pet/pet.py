@@ -1,20 +1,24 @@
 """Кай — питомец на рабочем столе.
 
 Что показывает, по важности:
-1. разовая реакция или жест (машет, сердечко, лайк, танец…);
+1. разовая реакция или жест (машет, мурлычет, ест, сердечко, танец…);
 2. статус, если Кая подключили к ассистенту (работает, ждёт ответа);
 3. эмоция по смыслу ненадолго;
 4. курсор рядом — смотрит на него, на самом Кае — любопытство;
-5. долго никого нет — спит;
-6. фон: программа впереди, усталость после долгой работы, время суток.
-Всё считается локально: имя программы, заголовок окна и время без ввода. Клавиши и экран не читаются.
+5. играет музыка — кивает в такт;
+6. долго никого нет — спит;
+7. фон: программа впереди, усталость после долгой работы, время суток.
+Всё считается локально: имя программы, заголовок и место окна, время без ввода, громкость звука.
+Клавиши и экран не читаются.
 """
 from __future__ import annotations
 
+import collections
 import ctypes
 import datetime
 import json
 import logging
+import math
 import os
 import random
 import shutil
@@ -22,21 +26,33 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, QProcess, QProcessEnvironment, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QProcess, QProcessEnvironment, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QCursor, QGuiApplication, QPainter, QPixmap
 from PySide6.QtWidgets import QInputDialog, QMenu, QWidget
 
-from . import commands
+from . import commands, sounds
 from .bubble import Bubble
 from .config import Config
 
 log = logging.getLogger(__name__)
 
-ASSETS = Path(__file__).resolve().parent.parent / "assets"   # кадры: node character/export.mjs
+FROZEN = bool(getattr(sys, "frozen", False))
+ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+ASSETS = ROOT / "assets"                     # кадры: node character/export.mjs
+# В KaiPet.exe папка с кадрами только для чтения — новые образы Кай рисует в профиль пользователя.
+LOOKS_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "KaiPet" / "looks" if FROZEN else None
 FPS = {"moods": 12}     # живые эмоции дышат медленнее, остальное 24 к/с
 CACHE_MAX = 10          # наборов кадров в памяти; одна эмоция ≈ 3 МБ
 TIRED_EVERY_S, TIRED_FOR_S = 15 * 60, 20   # после долгой работы: раз в 15 минут устаёт на 20 секунд
 FLASH_S = 8             # эмоция по смыслу держится после кивка
+MUSIC_LEVEL = 0.02      # громкость выше — звучит что-то
+MUSIC_SAMPLES, MUSIC_NEED = 8, 6           # 8 замеров по 0,4 с: из них 6 громких — это музыка, а не «дзынь»
+PET_DISTANCE, PET_GAP_S = 450, 0.8         # столько провести мышкой по Каю без пауз — погладили
+FRIEND_LEVELS = (5, 15, 35, 70, 120)       # очки дружбы до каждого следующего сердечка
+SNAP_PX = 48            # ближе к краю экрана — Кай прилипает и поворачивается лапками к этому краю
+EDGE_ANGLE = {"bottom": 0, "left": 90, "top": 180, "right": 270}
+DOCKS = {"corner": "В углу экрана", "window": "Сверху на активном окне", "free": "Где оставлю (липнет к краям)"}
+
 # Гардероб — те же имена, что в character/kai.js (KINDS, PALETTES, ACCESSORIES).
 KINDS = {"cat": "Котик", "fox": "Лисёнок", "bunny": "Зайка", "bear": "Мишка"}
 COLORS = {"gray": "Серый", "ginger": "Рыжий", "graphite": "Графитовый", "terracotta": "Терракотовый",
@@ -47,65 +63,6 @@ DEFAULT_LOOK = {"kind": "cat", "color": "gray", "acc": []}
 LOOKS_KEEP = 6          # готовых образов на диске; один ≈ 20 МБ
 EXPORT_TIMEOUT_MS = 180_000
 DRESSED = ("Как я тебе?", "Ну как, идёт?", "Новый образ готов!")
-
-
-def state_file() -> Path:
-    """Что Кай помнит между запусками (образ). Путь можно сменить переменной KAI_PET_STATE."""
-    return Path(os.environ.get("KAI_PET_STATE") or Path.home() / ".kai-pet-state.json")
-
-
-def load_state() -> dict:
-    try:
-        data = json.loads(state_file().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def save_state(key: str, value) -> None:
-    data = load_state()
-    data[key] = value
-    try:
-        state_file().write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-    except OSError as e:                       # не записалось — Кай работает, просто не вспомнит образ
-        log.warning("Состояние Кая не сохранено: %s", e)
-
-
-def normalize_look(look) -> dict:
-    """Только известные вид, цвет и вещи; на каждом месте (голова, шея, лицо) — одна вещь, последняя побеждает."""
-    look = look if isinstance(look, dict) else {}
-    slots: dict[str, str] = {}
-    for item in look.get("acc") or []:
-        if item in ACCESSORIES:
-            slots[ACCESSORIES[item][1]] = item
-    return {"kind": look.get("kind") if look.get("kind") in KINDS else "cat",
-            "color": look.get("color") if look.get("color") in COLORS else "gray",
-            "acc": sorted(slots.values())}
-
-
-def look_id(look: dict) -> str:
-    look = normalize_look(look)
-    return f"{look['kind']}-{look['color']}-{'+'.join(look['acc']) or 'none'}"
-
-
-def change_look(look: dict, op: dict) -> dict:
-    """Команда гардеробу: {"kind"}, {"color"}, {"wear"}, {"remove": вещь | "all"}, {"reset"}, {"random"}."""
-    look = normalize_look(look)
-    if op.get("reset"):
-        return normalize_look(DEFAULT_LOOK)
-    if op.get("random"):
-        acc = random.sample(sorted(ACCESSORIES), random.randint(0, 2))
-        return normalize_look({"kind": random.choice(list(KINDS)), "color": random.choice(list(COLORS)), "acc": acc})
-    if op.get("kind"):
-        look["kind"] = op["kind"]
-    if op.get("color"):
-        look["color"] = op["color"]
-    if op.get("wear"):
-        look["acc"] = look["acc"] + [op["wear"]]
-    if op.get("remove"):
-        look["acc"] = [] if op["remove"] == "all" else [a for a in look["acc"] if a != op["remove"]]
-    return normalize_look(look)
-
 
 GESTURES = {"heart": "Сердечко", "like": "Лайк", "wave": "Помахать", "bye": "Попрощаться", "dance": "Станцевать",
             "hug": "Обнять", "bow": "Поклониться", "clap": "Похлопать", "jump": "Подпрыгнуть"}
@@ -123,6 +80,29 @@ BREAK_HINTS = ("Ты уже долго работаешь. Может, пару 
 WELCOME_HINTS = ("С возвращением! Продолжим?", "Рад тебя видеть. Чем займёмся?", "О, привет! Я соскучился.")
 
 
+# --- память между запусками: образ, место, дружба, переключатели ---
+def state_file() -> Path:
+    """Путь можно сменить переменной KAI_PET_STATE."""
+    return Path(os.environ.get("KAI_PET_STATE") or Path.home() / ".kai-pet-state.json")
+
+
+def load_state() -> dict:
+    try:
+        data = json.loads(state_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_state(key: str, value) -> None:
+    data = load_state()
+    data[key] = value
+    try:
+        state_file().write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    except OSError as e:                       # не записалось — Кай работает, просто не вспомнит
+        log.warning("Состояние Кая не сохранено: %s", e)
+
+
 # --- что видно о пользователе (только Windows; на других системах эти сигналы просто молчат) ---
 def input_idle_s() -> float:
     """Сколько секунд не было мыши и клавиатуры (сами клавиши не видны)."""
@@ -138,20 +118,25 @@ def input_idle_s() -> float:
     return ((ctypes.windll.kernel32.GetTickCount() - lii.dwTime) & 0xFFFFFFFF) / 1000
 
 
+def _foreground():
+    user32 = ctypes.windll.user32
+    user32.GetForegroundWindow.restype = ctypes.c_void_p
+    hwnd = user32.GetForegroundWindow()
+    return ctypes.c_void_p(hwnd) if hwnd else None
+
+
 def active_window() -> tuple[str, str]:
     """(заголовок, имя программы) окна впереди."""
     if sys.platform != "win32":
         return "", ""
     user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
-    user32.GetForegroundWindow.restype = ctypes.c_void_p
     kernel32.OpenProcess.restype = ctypes.c_void_p
     kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
     kernel32.QueryFullProcessImageNameW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_wchar_p,
                                                     ctypes.POINTER(ctypes.c_ulong)]
-    hwnd = user32.GetForegroundWindow()
+    hwnd = _foreground()
     if not hwnd:
         return "", ""
-    hwnd = ctypes.c_void_p(hwnd)
     length = user32.GetWindowTextLengthW(hwnd)
     title = ctypes.create_unicode_buffer(length + 1)
     user32.GetWindowTextW(hwnd, title, length + 1)
@@ -166,6 +151,48 @@ def active_window() -> tuple[str, str]:
             name = os.path.basename(buf.value)
         kernel32.CloseHandle(handle)
     return title.value, name
+
+
+def active_window_rect() -> tuple[int, int, int, int] | None:
+    """(left, top, right, bottom) окна впереди в настоящих пикселях экрана."""
+    if sys.platform != "win32":
+        return None
+    hwnd = _foreground()
+    if not hwnd:
+        return None
+
+    class _RECT(ctypes.Structure):
+        _fields_ = [(n, ctypes.c_long) for n in ("left", "top", "right", "bottom")]
+
+    r = _RECT()
+    if not ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(r)):
+        return None
+    return r.left, r.top, r.right, r.bottom
+
+
+_meter = [None, 0.0]                         # индикатор громкости и когда его открыли
+
+
+def audio_peak() -> float:
+    """Насколько громко сейчас что-то играет (0..1). Не Windows или нет pycaw — 0: Кай просто не танцует."""
+    if sys.platform != "win32":
+        return 0.0
+    try:
+        if _meter[0] is None or time.monotonic() - _meter[1] > 120:   # раз в 2 минуты: вдруг сменили наушники
+            from comtypes import CLSCTX_ALL
+            from pycaw.pycaw import AudioUtilities, IAudioMeterInformation
+            dev = AudioUtilities.GetSpeakers()
+            dev = getattr(dev, "_dev", dev)
+            # QueryInterface, а не cast: cast не считает ссылку, и COM-объект освобождался дважды —
+            # Python падал с access violation, когда сборщик мусора убирал старый индикатор.
+            unknown = dev.Activate(IAudioMeterInformation._iid_, CLSCTX_ALL, None)
+            _meter[0] = unknown.QueryInterface(IAudioMeterInformation)
+            _meter[1] = time.monotonic()
+        return float(_meter[0].GetPeakValue())
+    except Exception as e:                   # нет pycaw, нет устройства вывода — без танцев, без падения
+        log.debug("Громкость не прочитана: %s", e)
+        _meter[0] = None
+        return 0.0
 
 
 # --- правила (без Qt, легко проверять) ---
@@ -217,6 +244,104 @@ def meaning_mood(heard: str, answer: str) -> str | None:
     return None
 
 
+def snap_edge(x: int, y: int, size: int, area: QRect) -> tuple[int, int, str] | None:
+    """Кая отпустили у края экрана → (x, y, край) вплотную к краю; далеко от краёв — None."""
+    left, top = area.left(), area.top()
+    right, bottom = left + area.width(), top + area.height()
+    gaps = {"left": x - left, "right": right - (x + size), "top": y - top, "bottom": bottom - (y + size)}
+    edge = min(gaps, key=gaps.get)
+    if gaps[edge] > SNAP_PX:
+        return None
+    x, y = min(max(x, left), right - size), min(max(y, top), bottom - size)
+    if edge == "left":
+        x = left
+    elif edge == "right":
+        x = right - size
+    elif edge == "top":
+        y = top
+    else:
+        y = bottom - size
+    return x, y, edge
+
+
+def perch_on(rect, ratio: float, size: int, area: QRect) -> tuple[int, int] | None:
+    """Окно впереди (настоящие пиксели) → где Каю сидеть на его верхней кромке; негде — None."""
+    if not rect:
+        return None
+    left, top, right, bottom = (v / ratio for v in rect)
+    if right - left < size * 2 or bottom - top < size or top - area.top() < size * 0.8:
+        return None                           # окна нет, оно маленькое или развёрнуто во весь экран
+    x = right - size - 160                    # правее середины, но не над кнопками «свернуть/закрыть»
+    x = min(max(x, left + 8), area.left() + area.width() - size)
+    return int(x), int(top - size * 0.93)     # лапки как раз на кромке окна
+
+
+def normalize_look(look) -> dict:
+    """Только известные вид, цвет и вещи; на каждом месте (голова, шея, лицо) — одна вещь, последняя побеждает."""
+    look = look if isinstance(look, dict) else {}
+    slots: dict[str, str] = {}
+    for item in look.get("acc") or []:
+        if item in ACCESSORIES:
+            slots[ACCESSORIES[item][1]] = item
+    return {"kind": look.get("kind") if look.get("kind") in KINDS else "cat",
+            "color": look.get("color") if look.get("color") in COLORS else "gray",
+            "acc": sorted(slots.values())}
+
+
+def look_id(look: dict) -> str:
+    look = normalize_look(look)
+    return f"{look['kind']}-{look['color']}-{'+'.join(look['acc']) or 'none'}"
+
+
+def change_look(look: dict, op: dict) -> dict:
+    """Команда гардеробу: {"kind"}, {"color"}, {"wear"}, {"remove": вещь | "all"}, {"reset"}, {"random"}."""
+    look = normalize_look(look)
+    if op.get("reset"):
+        return normalize_look(DEFAULT_LOOK)
+    if op.get("random"):
+        acc = random.sample(sorted(ACCESSORIES), random.randint(0, 2))
+        return normalize_look({"kind": random.choice(list(KINDS)), "color": random.choice(list(COLORS)), "acc": acc})
+    if op.get("kind"):
+        look["kind"] = op["kind"]
+    if op.get("color"):
+        look["color"] = op["color"]
+    if op.get("wear"):
+        look["acc"] = look["acc"] + [op["wear"]]
+    if op.get("remove"):
+        look["acc"] = [] if op["remove"] == "all" else [a for a in look["acc"] if a != op["remove"]]
+    return normalize_look(look)
+
+
+def season_key(day: datetime.date) -> str:
+    """«winter-2026» с декабря 2026 по февраль 2027; вне зимы — пусто."""
+    if day.month == 12:
+        return f"winter-{day.year}"
+    return f"winter-{day.year - 1}" if day.month in (1, 2) else ""
+
+
+def effective_look(chosen: dict, day: datetime.date, birthday: str = "", seasonal: bool = True,
+                   winter_off: str = "") -> dict:
+    """Образ с сезонными вещами: зимой шапочка и шарф, в день рождения корона — только на свободные места."""
+    look = normalize_look(chosen)
+    if not seasonal:
+        return look
+    extra = []
+    if birthday and day.strftime("%m-%d") == birthday:
+        extra.append("crown")
+    if season_key(day) and winter_off != season_key(day):
+        extra += ["hat", "scarf"]
+    taken = {ACCESSORIES[a][1] for a in look["acc"]}
+    for item in extra:
+        if ACCESSORIES[item][1] not in taken:
+            look["acc"].append(item)
+            taken.add(ACCESSORIES[item][1])
+    return normalize_look(look)
+
+
+def friend_level(points: int) -> int:
+    return sum(points >= x for x in FRIEND_LEVELS)
+
+
 class Pet(QWidget):
     clicked = Signal()
     quit_requested = Signal()
@@ -227,15 +352,18 @@ class Pet(QWidget):
         if not (assets / "frames" / "idle").is_dir():
             raise FileNotFoundError(f"нет кадров Кая в {assets} — запустите node character/export.mjs")
         self.dir, self.cfg = assets, cfg or Config()
-        self.base = assets                         # кадры обычного Кая; образы — в assets/looks/<id>
+        self.base = assets                         # кадры обычного Кая; новые образы — в looks/<id>
         self._export: QProcess | None = None
         self._export_look: dict | None = None      # что сейчас готовится
         self._pending_look: dict | None = None     # что попросили, пока готовилось другое
-        self.look = normalize_look(DEFAULT_LOOK)
+        self.look = normalize_look(DEFAULT_LOOK)   # надетый образ (с сезонными вещами)
+        state = load_state()
+        self.chosen = normalize_look(state.get("look"))   # что выбрали вы
         self.size_px = self.cfg.size
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setFixedSize(self.size_px, self.size_px)
+        self.setMouseTracking(True)                # поглаживание — движение мыши без нажатия
         self.cache: dict = {}
         self.loop, self.once, self.frame = "idle", None, 0   # статус и разовая реакция поверх фона
         self.repeat = 0                                       # сколько ещё раз повторить разовую реакцию
@@ -244,17 +372,32 @@ class Pet(QWidget):
         self.session_start = time.monotonic()                 # начало непрерывной работы
         self.away = False
         self.away_since = 0.0
-        self.hints = self.cfg.hints
+        self.hints = bool(state.get("hints", self.cfg.hints))
+        self.sounds_on = bool(state.get("sounds", self.cfg.sounds))
+        self.dance_on = bool(state.get("dance", self.cfg.dance_to_music))
+        self.seasonal = bool(state.get("seasonal", self.cfg.seasonal))
+        self.friend = int(state.get("friend", 0) or 0)
         self.last_hint = time.monotonic()
         self.heard = ""
         self.flash: tuple[str, float] | None = None          # эмоция ненадолго: (имя, до какого момента)
         self.bubble = Bubble()
         self.shown = ""
+        self.music = False
+        self._peaks: collections.deque = collections.deque(maxlen=MUSIC_SAMPLES)
+        self._stroke = [0.0, 0.0, None]                       # длина поглаживания, когда последнее движение, где
+        self._last_pet_friend = 0.0
         self._pix = None
         self._press = None
         self._warned: set[str] = set()
-        area = QGuiApplication.primaryScreen().availableGeometry()
-        self.move(area.right() - self.size_px - 16, area.bottom() - self.size_px - 8)
+        self._today = datetime.date.today()
+        self.dock = state.get("dock") if state.get("dock") in DOCKS else "corner"
+        try:
+            self.angle = int(state.get("angle", 0)) % 360
+        except (TypeError, ValueError):
+            self.angle = 0
+        self._snapped = False
+        self._place_saved(str(state.get("pos", "")))
+        self._mark_day()
         self.play("wave")
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
@@ -262,30 +405,64 @@ class Pet(QWidget):
         self._watch = QTimer(self)
         self._watch.timeout.connect(self._observe)
         self._watch.start(2000)
-        wanted = normalize_look(load_state().get("look"))
+        self._perch = QTimer(self)
+        self._perch.timeout.connect(self._follow_window)
+        self._perch.start(400)
+        self._ear = QTimer(self)
+        self._ear.timeout.connect(self._listen)
+        self._ear.start(400)
+        wanted = self._effective()
         if wanted != self.look:
-            QTimer.singleShot(0, lambda: self.set_look(wanted, announce=False))   # образ из прошлого раза
+            QTimer.singleShot(0, lambda: self._wear(wanted, announce=False, greet=True))   # образ из прошлого раза
 
-    # --- гардероб: вид, цвет, аксессуары ---
+    # --- гардероб: вид, цвет, аксессуары, сезонные вещи ---
+    def looks_root(self) -> Path:
+        return LOOKS_DIR or self.base / "looks"
+
     def look_dir(self, look: dict) -> Path:
-        return self.base if look_id(look) == look_id(DEFAULT_LOOK) else self.base / "looks" / look_id(look)
+        return self.base if look_id(look) == look_id(DEFAULT_LOOK) else self.looks_root() / look_id(look)
+
+    def _effective(self, chosen: dict | None = None) -> dict:
+        return effective_look(chosen or self.chosen, datetime.date.today(), self.cfg.birthday, self.seasonal,
+                              load_state().get("winter_off", ""))
 
     def change_look(self, op: dict) -> None:
-        """Команда гардеробу — от того образа, который сейчас надет или готовится."""
-        self.set_look(change_look(self._pending_look or self._export_look or self.look, op))
+        """Команда гардеробу. Снять сезонную вещь — значит не надевать её до конца сезона."""
+        removed = op.get("remove")
+        seasonal_now = set(self._effective()["acc"]) - set(self.chosen["acc"])
+        if removed and (removed == "all" or removed in seasonal_now) and season_key(datetime.date.today()):
+            save_state("winter_off", season_key(datetime.date.today()))
+        self.set_look(change_look(self.chosen, op))
 
     def set_look(self, look: dict, announce: bool = True) -> None:
+        self.chosen = normalize_look(look)
+        save_state("look", self.chosen)
+        self._wear(self._effective(), announce)
+
+    def _wear(self, look: dict, announce: bool, greet: bool = False) -> None:
         look = normalize_look(look)
-        save_state("look", look)
         if self._export is not None:            # уже переодевается — этот образ следующим
             self._pending_look = look if look != self._export_look else None
             return
         if look == self.look:
             return
+        if greet:
+            self._greet_season(look)
         if (self.look_dir(look) / "frames" / "idle").is_dir():
             self._apply_look(look, announce)
         else:
             self._start_export(look, announce)
+
+    def _greet_season(self, look: dict) -> None:
+        """Сезонную вещь Кай надел сам — один раз скажет почему."""
+        today, state = datetime.date.today(), load_state()
+        added = set(look["acc"]) - set(self.chosen["acc"])
+        if "crown" in added and state.get("birthday_greeted") != today.isoformat():
+            save_state("birthday_greeted", today.isoformat())
+            self.bubble.say("С днём рождения! Надел корону в твою честь.", 12000)
+        elif added & {"hat", "scarf"} and state.get("winter_greeted") != season_key(today):
+            save_state("winter_greeted", season_key(today))
+            self.bubble.say("Зима пришла! Надел шапочку и шарфик.", 10000)
 
     def _apply_look(self, look: dict, announce: bool) -> None:
         self.look, self.dir = look, self.look_dir(look)
@@ -299,13 +476,15 @@ class Pet(QWidget):
 
     def _start_export(self, look: dict, announce: bool) -> None:
         """Кадры нового образа рисуются в фоне (≈20 с): node character/export.mjs с KAI_LOOK и KAI_OUT."""
-        node, script = shutil.which("node"), self.base.parent / "character" / "export.mjs"
+        node, script = shutil.which("node"), ROOT / "character" / "export.mjs"
         if not node or not script.is_file():
             log.warning("Кай не может переодеться: нет node или %s", script)
-            self.bubble.say("Не получается переодеться: нужен Node.js и Edge или Chrome.", 6000)
+            if announce:
+                self.bubble.say("Не получается переодеться: нужен Node.js и Edge или Chrome.", 6000)
             return
         tmp = self.look_dir(look).with_name(look_id(look) + ".tmp")
         shutil.rmtree(tmp, ignore_errors=True)
+        tmp.parent.mkdir(parents=True, exist_ok=True)
         env = QProcessEnvironment.systemEnvironment()
         env.insert("KAI_LOOK", json.dumps(look))
         env.insert("KAI_OUT", str(tmp))
@@ -338,16 +517,73 @@ class Pet(QWidget):
             self.bubble.say("Не получилось переодеться. Попробую в другой раз.", 6000)
         pending, self._pending_look = self._pending_look, None
         if pending is not None:
-            self.set_look(pending, announce)
+            self._wear(pending, announce)
 
     def _prune_looks(self, keep: Path) -> None:
         """На диске — не больше LOOKS_KEEP образов: самые давние удаляются, надетый и новый — никогда."""
-        root = self.base / "looks"
+        root = self.looks_root()
         dirs = sorted((d for d in root.iterdir() if d.is_dir() and not d.name.endswith(".tmp")),
                       key=lambda d: d.stat().st_mtime, reverse=True)
         for d in dirs[LOOKS_KEEP:]:
             if d not in (keep, self.dir):
                 shutil.rmtree(d, ignore_errors=True)
+
+    # --- погладить, угостить, дружба ---
+    def petted(self) -> None:
+        """Погладили мышкой: мурлычет и жмурится; дружба растёт не чаще раза в минуту."""
+        if self.once == "purr":
+            return
+        self._touch()
+        self.play("purr", 2)
+        self._sound("purr")
+        if time.monotonic() - self._last_pet_friend > 60:
+            self._last_pet_friend = time.monotonic()
+            self._befriend(1)
+
+    def feed(self) -> None:
+        """Печенька — раз в день. Второй раз Кай вежливо откажется."""
+        today = datetime.date.today().isoformat()
+        if load_state().get("last_fed") == today:
+            self.bubble.say("Спасибо, я уже наелся! Давай завтра.", 5000)
+            return
+        save_state("last_fed", today)
+        self._touch()
+        self.play("eat")
+        self._sound("munch")
+        self.bubble.say("Ням! Спасибо за печеньку!", 5000)
+        self._befriend(3)
+
+    def _befriend(self, points: int) -> None:
+        before = friend_level(self.friend)
+        self.friend += points
+        save_state("friend", self.friend)
+        after = friend_level(self.friend)
+        if after > before:
+            self.bubble.say(f"Мы стали ещё ближе! Дружба: {'♥' * after}{'♡' * (len(FRIEND_LEVELS) - after)}", 8000)
+
+    def friendship_text(self) -> str:
+        lvl = friend_level(self.friend)
+        days = int(load_state().get("days", 1) or 1)
+        return f"Дружба: {'♥' * lvl}{'♡' * (len(FRIEND_LEVELS) - lvl)} · дней вместе: {days}"
+
+    def _mark_day(self) -> None:
+        today = datetime.date.today().isoformat()
+        state = load_state()
+        if state.get("last_day") != today:
+            save_state("days", int(state.get("days", 0) or 0) + 1)
+            save_state("last_day", today)
+
+    def _sound(self, name: str) -> None:
+        if self.sounds_on:
+            sounds.play(self.base / "sounds" / f"{name}.wav")
+
+    # --- музыка ---
+    def _listen(self) -> None:
+        if not self.dance_on:
+            self.music = False
+            return
+        self._peaks.append(audio_peak())
+        self.music = sum(p > MUSIC_LEVEL for p in self._peaks) >= MUSIC_NEED
 
     # --- API: подключение к своему ассистенту ---
     def set_status(self, status: str) -> None:
@@ -396,7 +632,7 @@ class Pet(QWidget):
             self.flash = (name, time.monotonic() + 3.0 * times)
 
     def command(self, text: str) -> bool:
-        """Фраза Каю: «передай Антону привет», «покажи сердечко», «станцуй»… False — это не ему."""
+        """Фраза Каю: «передай Антону привет», «покажи сердечко», «надень шарф»… False — это не ему."""
         act = commands.parse(text)
         if not act:
             return False
@@ -411,7 +647,7 @@ class Pet(QWidget):
         self.last_event = time.monotonic()
 
     def _observe(self) -> None:
-        """Раз в 2 секунды: программа впереди и ритм работы."""
+        """Раз в 2 секунды: программа впереди, ритм работы, новый день."""
         now = time.monotonic()
         idle = input_idle_s()
         if idle >= self.cfg.away_after_min * 60:
@@ -433,6 +669,10 @@ class Pet(QWidget):
         except (OSError, AttributeError) as e:   # окно закрылось на ходу — просто без эмоции программы
             log.debug("Активное окно не прочитано: %s", e)
             self.app = None
+        if datetime.date.today() != self._today:  # наступил новый день: зима, день рождения, счётчик дней
+            self._today = datetime.date.today()
+            self._mark_day()
+            self._wear(self._effective(), announce=False, greet=True)
 
     def _hint(self, phrases) -> None:
         """Мягкая подсказка облачком. Выключается в меню Кая."""
@@ -459,6 +699,8 @@ class Pet(QWidget):
         look = look_at(c.x() - g.center().x(), c.y() - g.center().y(), self.cfg.look_radius_px, self.size_px / 2)
         if look:
             return look
+        if self.music:
+            return "groove"
         if self._idle_s() > self.cfg.sleep_after_min * 60:
             return "sleepy"
         hour = datetime.datetime.now().hour
@@ -520,8 +762,19 @@ class Pet(QWidget):
         self.update()
 
     def paintEvent(self, _event):
-        if self._pix is not None:
-            QPainter(self).drawPixmap(0, 0, self._pix)
+        if self._pix is None:
+            return
+        p = QPainter(self)
+        if self.angle:
+            p.setRenderHint(QPainter.SmoothPixmapTransform)
+            rad = math.radians(self.angle)
+            k = 1 / (abs(math.cos(rad)) + abs(math.sin(rad)))   # повёрнутый Кай целиком влезает в окошко
+            half = self.size_px / 2
+            p.translate(half, half)
+            p.rotate(self.angle)
+            p.scale(k, k)
+            p.translate(-half, -half)
+        p.drawPixmap(0, 0, self._pix)
 
     def moveEvent(self, event):
         super().moveEvent(event)
@@ -531,21 +784,107 @@ class Pet(QWidget):
         super().hideEvent(event)
         self.bubble.hide()
 
-    # --- меню и мышь: клик — помахать, перетаскивание — переставить ---
+    # --- где сидит и как повёрнут ---
+    def _area(self) -> QRect:
+        screen = QGuiApplication.screenAt(self.geometry().center()) or QGuiApplication.primaryScreen()
+        return screen.availableGeometry()
+
+    def _corner(self) -> QPoint:
+        area = QGuiApplication.primaryScreen().availableGeometry()
+        return QPoint(area.right() - self.size_px - 16, area.bottom() - self.size_px - 8)
+
+    def _place_saved(self, pos: str) -> None:
+        """Место из прошлого запуска, если тот экран всё ещё подключён; иначе — угол."""
+        if self.dock == "free":
+            try:
+                x, y = (int(v) for v in pos.split(","))
+            except ValueError:
+                x = y = None
+            if x is not None and any(s.availableGeometry().intersects(QRect(x, y, self.size_px, self.size_px))
+                                     for s in QGuiApplication.screens()):
+                self.move(x, y)
+                return
+        self.move(self._corner())
+
+    def _save_place(self) -> None:
+        save_state("dock", self.dock)
+        save_state("angle", self.angle)
+        save_state("pos", f"{self.x()},{self.y()}")
+
+    def set_dock(self, mode: str) -> None:
+        self.dock = mode if mode in DOCKS else "corner"
+        if self.dock != "free":
+            self.angle, self._snapped = 0, False   # в углу и на окне Кай стоит на лапках
+        if self.dock == "corner":
+            self.move(self._corner())
+        self._follow_window()
+        self._save_place()
+        self.update()
+
+    def set_angle(self, angle: int) -> None:
+        self.angle = angle % 360
+        self._save_place()
+        self.update()
+
+    def _follow_window(self) -> None:
+        """Режим «на окне»: Кай сидит на верхней кромке окна впереди и ездит вместе с ним."""
+        if self.dock != "window" or self._press:
+            return
+        try:
+            rect = active_window_rect()
+        except OSError as e:                         # окно закрылось на ходу — посидим в углу
+            log.debug("Окно для Кая не прочитано: %s", e)
+            rect = None
+        ratio = 1.0 if sys.platform == "darwin" else self.devicePixelRatioF()   # окна Windows — в настоящих пикселях
+        spot = perch_on(rect, ratio, self.size_px, self._area())
+        target = QPoint(*spot) if spot else self._corner()
+        if (target - self.pos()).manhattanLength() > 2:
+            self.move(target)
+
+    def _dropped(self) -> None:
+        """Кая отпустили после перетаскивания: у края прилипает и ложится лапками к краю."""
+        self.dock = "free"
+        snap = snap_edge(self.x(), self.y(), self.size_px, self._area())
+        if snap:
+            x, y, edge = snap
+            self.move(x, y)
+            self.angle, self._snapped = EDGE_ANGLE[edge], True
+        elif self._snapped:
+            self.angle, self._snapped = 0, False   # оторвали от края — снова стоит ровно
+        self._save_place()
+        self.update()
+
+    def wheelEvent(self, e):
+        if e.modifiers() & Qt.ControlModifier:       # Ctrl + колёсико — плавный поворот
+            self.set_angle(self.angle + (15 if e.angleDelta().y() < 0 else -15))
+            e.accept()
+        else:
+            e.ignore()
+
+    # --- меню ---
+    def _toggle(self, menu: QMenu, title: str, checked: bool, slot) -> None:
+        action = QAction(title, menu)
+        action.setCheckable(True)
+        action.setChecked(checked)
+        action.toggled.connect(slot)
+        menu.addAction(action)
+
+    def _set_flag(self, key: str, attr: str, on: bool) -> None:
+        setattr(self, attr, on)
+        save_state(key, on)
+        if key == "seasonal":
+            self._wear(self._effective(), announce=True)
+
     def contextMenuEvent(self, e):
         menu = QMenu()
         menu.addAction("Сказать Каю…").triggered.connect(lambda _c=False: self._talk())
         gestures = menu.addMenu("Жесты")
         for name, title in GESTURES.items():
             gestures.addAction(title).triggered.connect(lambda _c=False, n=name: self.gesture(n, 2))
+        menu.addAction("Угостить печенькой").triggered.connect(lambda _c=False: self.feed())
         menu.addSeparator()
-        hints = QAction("Подсказки", menu)
-        hints.setCheckable(True)
-        hints.setChecked(self.hints)
-        hints.toggled.connect(lambda on: setattr(self, "hints", on))
-        menu.addAction(hints)
         dress = menu.addMenu("Внешность")
-        current = self._pending_look or self._export_look or self.look
+        current = self._pending_look or self._export_look or self.chosen
         for title, options, key in (("Вид", KINDS, "kind"), ("Цвет", COLORS, "color")):
             sub = dress.addMenu(title)
             for name, ru in options.items():
@@ -554,26 +893,50 @@ class Pet(QWidget):
                 action.setChecked(current[key] == name)
                 action.triggered.connect(lambda _c=False, k=key, n=name: self.change_look({k: n}))
         things = dress.addMenu("Аксессуары")
+        worn = set(self.look["acc"])
         for name, (ru, _slot) in ACCESSORIES.items():
             action = things.addAction(ru)
             action.setCheckable(True)
-            action.setChecked(name in current["acc"])
+            action.setChecked(name in worn)
             action.triggered.connect(lambda on, n=name: self.change_look({"wear": n} if on else {"remove": n}))
         dress.addSeparator()
         dress.addAction("Удиви меня").triggered.connect(lambda _c=False: self.change_look({"random": True}))
         dress.addAction("Как было").triggered.connect(lambda _c=False: self.change_look({"reset": True}))
+        place = menu.addMenu("Где сидеть")
+        for mode, title in DOCKS.items():
+            action = place.addAction(title)
+            action.setCheckable(True)
+            action.setChecked(self.dock == mode)
+            action.triggered.connect(lambda _c=False, m=mode: self.set_dock(m))
+        turn = menu.addMenu("Повернуть")
+        for title, delta in (("По часовой ↻", 90), ("Против часовой ↺", -90), ("Вверх лапками", 180)):
+            turn.addAction(title).triggered.connect(lambda _c=False, d=delta: self.set_angle(self.angle + d))
+        turn.addAction("Ровно").triggered.connect(lambda _c=False: self.set_angle(0))
+        turn.addSeparator()
+        turn.addAction("Плавно: Ctrl + колёсико мыши").setEnabled(False)
+        settings = menu.addMenu("Настройки")
+        self._toggle(settings, "Подсказки", self.hints, lambda on: self._set_flag("hints", "hints", on))
+        self._toggle(settings, "Звуки", self.sounds_on, lambda on: self._set_flag("sounds", "sounds_on", on))
+        self._toggle(settings, "Танцевать под музыку", self.dance_on, lambda on: self._set_flag("dance", "dance_on", on))
+        self._toggle(settings, "Сезонные образы", self.seasonal, lambda on: self._set_flag("seasonal", "seasonal", on))
+        menu.addSeparator()
+        menu.addAction(self.friendship_text()).setEnabled(False)
         menu.addAction("Выход").triggered.connect(lambda _c=False: self.quit_requested.emit())
-        menu.exec(e.globalPos())
+        self._show_menu(menu, e.globalPos())
+
+    def _show_menu(self, menu: QMenu, pos: QPoint) -> None:
+        menu.exec(pos)
 
     def _talk(self) -> None:
         dlg = QInputDialog()
         dlg.setWindowTitle("Кай")
-        dlg.setLabelText("Что сказать Каю? Например: «передай Антону привет», «покажи сердечко», «станцуй»")
+        dlg.setLabelText("Что сказать Каю? Например: «передай Антону привет», «покажи сердечко», «надень шарф»")
         dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowStaysOnTopHint)
         if dlg.exec() and dlg.textValue().strip() and not self.command(dlg.textValue()):
             self.gesture("confused", 1)
             self.say("Я пока такого не умею. Попробуй «покажи сердечко» или «станцуй».", 6000)
 
+    # --- мышь: клик — помахать, перетаскивание — переставить, поглаживание — мурлыкать ---
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
             self._press = [e.globalPosition().toPoint(), self.pos(), False]
@@ -586,12 +949,26 @@ class Pet(QWidget):
                 self._press[2] = True
             if self._press[2]:
                 self.move(origin + QPoint(delta.x(), delta.y()))
+            return
+        now, pos = time.monotonic(), e.globalPosition()
+        length, last_t, last_pos = self._stroke
+        if last_pos is None or now - last_t > PET_GAP_S:
+            length = 0.0
+        else:
+            length += abs(pos.x() - last_pos.x()) + abs(pos.y() - last_pos.y())
+        self._stroke = [length, now, pos]
+        if length > PET_DISTANCE:
+            self._stroke = [0.0, now, pos]
+            self.petted()
 
     def mouseReleaseEvent(self, e):
         if self._press and e.button() == Qt.LeftButton:
             moved = self._press[2]
             self._press = None
-            if not moved:
+            if moved:
+                self._dropped()
+            else:
                 self._touch()
                 self.play("wave")
+                self._sound("meow")
                 self.clicked.emit()

@@ -1,0 +1,28 @@
+name: release
+
+# Новая версия: git tag v1.2.0 && git push origin v1.2.0 — здесь соберётся KaiPet.exe и появится в Releases.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt pyinstaller
+      - name: Tests
+        run: python -m pytest -q
+      - name: Build KaiPet.exe
+        run: python build_exe.py
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/KaiPet.exe
+          generate_release_notes: true

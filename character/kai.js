@@ -57,6 +57,7 @@ const BASE = {
   blush: 0.5, spark: 0.5, sparkRot: 0,      // румянец, яркость и поворот лучистого мотива
   armL: 6, armR: 6, step: 0,                 // лапки: 0 вниз, + наружу/вверх, − к груди; шаг −1..1
   heart: 0, thumbL: 0, thumbR: 0,            // жесты: сердечко в лапках, большой палец вверх (0 — нет)
+  treat: 0,                                  // печенька в лапках (0 — нет, 1 — целая)
 };
 
 const PAIRS = { eyes: ['eyeL', 'eyeR'], open: ['openL', 'openR'], brow: ['browL', 'browR'],
@@ -254,6 +255,29 @@ const ANIMS = {
     p.y -= 2 * Math.abs(c); p.tail += 10 * c;
     return p;
   } },
+  groove: { ru: 'Кивает под музыку', frames: 24, fps: 24, state: 'neutral', fn: (p, t) => {
+    const b = Math.sin(2 * TAU * t);
+    Object.assign(p, { eyeL: 'happy', eyeR: 'happy', mouth: 'smile', blush: 0.5, tail: 15 + 10 * b });
+    p.y -= 3 * Math.abs(b); p.tilt += 6 * Math.sin(TAU * t);
+    p.earL += 6 * b; p.earR -= 6 * b;
+    return p;
+  } },
+  purr: { ru: 'Мурлычет', frames: 32, fps: 16, state: 'neutral', fn: (p, t) => {
+    Object.assign(p, { eyeL: 'closed', eyeR: 'closed', mouth: 'smile', blush: 0.9, curl: 0.9 });
+    p.sy *= 1 + 0.012 * Math.sin(8 * TAU * t);              // мелкая дрожь мурчания
+    p.tilt += 8 * Math.sin(TAU * t); p.earL += 10; p.earR += 10;
+    p.tail += 6 * Math.sin(TAU * t);
+    return p;
+  } },
+  eat: { ru: 'Ест печеньку', frames: 32, fps: 16, state: 'neutral', fn: keyed([
+    [0, {}],
+    [0.15, { treat: 1, arms: -70, mouth: 'o', mouthOpen: 0.8, sparkle: 1, eyeScale: 1.08 }],
+    [0.3, { treat: 0.75, arms: -70, mouth: 'smile', eyes: 'happy', blush: 0.7 }],
+    [0.45, { treat: 0.75, arms: -70, mouth: 'o', mouthOpen: 0.6, eyes: 'happy', blush: 0.7 }],
+    [0.6, { treat: 0.45, arms: -70, mouth: 'smile', eyes: 'happy', blush: 0.8 }],
+    [0.78, { treat: 0, arms: 10, mouth: 'tongue', eyes: 'happy', blush: 1 }],
+    [1, {}],
+  ]) },
   lookAround: { ru: 'Взгляд по сторонам', frames: 40, fps: 20, state: 'neutral', fn: keyed([
     [0, {}], [0.1, {}],
     [0.2, { look: LOOKS.left, tilt: -4 }], [0.3, { look: LOOKS.left, tilt: -4 }],
@@ -433,12 +457,15 @@ function svg(pose, opt = {}) {
     `<path d="M70,150 C66,96 98,78 128,78 C158,78 190,96 186,150" style="fill:none;stroke:${ACC_COLOR.phones};stroke-width:5;stroke-linecap:round"/>` +
     `<g style="fill:${ACC_COLOR.cups};stroke:${ink};stroke-width:4"><ellipse cx="66" cy="156" rx="11" ry="18"/><ellipse cx="190" cy="156" rx="11" ry="18"/></g></g>`;
   const hat = head ? `<g id="acc-head" transform="${tilt}">${head}</g>` : '';
+  const treat = p.treat > 0.05 ? `<g id="prop-treat" transform="translate(128 187) scale(${f(p.treat)})">` +
+    `<circle r="11" style="fill:${acc};stroke:${ink};stroke-width:3"/>` +
+    `<g style="fill:${ink}"><circle cx="-4" cy="-3" r="1.7"/><circle cx="4" cy="-1" r="1.7"/><circle cx="-1" cy="5" r="1.7"/></g></g>` : '';
 
   const flip = p.facing < 0 ? 'translate(256 0) scale(-1 1) ' : '';
   const T = `${flip}translate(0 ${f(p.y)}) rotate(${f(p.rot)} 128 228) translate(128 228) scale(${f(p.sx)} ${f(p.sy)}) translate(-128 -228)`;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}" width="${size}" height="${size}">` +
     `<defs><clipPath id="${id}-ear"><path d="${E.out}"/></clipPath></defs>` +
-    `<g id="kai" transform="${T}">${tail}<g id="ears" transform="${tilt}">${ear(-1)}${ear(1)}</g>${body}${spark}${scarf}${feet}${arm(-1)}${arm(1)}${heart}${face}${hat}</g></svg>`;
+    `<g id="kai" transform="${T}">${tail}<g id="ears" transform="${tilt}">${ear(-1)}${ear(1)}</g>${body}${spark}${scarf}${feet}${arm(-1)}${arm(1)}${heart}${face}${treat}${hat}</g></svg>`;
 }
 
 // ── Публичный API
