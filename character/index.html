@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<title>Кай — превью</title>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; color: #3D2B1F; background: #FBF8F3; margin: 24px; }
+  h2 { margin: 28px 0 10px; font-size: 16px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+  figure { margin: 0; text-align: center; }
+  figcaption { font-size: 12px; opacity: .75; }
+  .stage { background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 16px 16px; border-radius: 8px; }
+  select, button { font: inherit; padding: 4px 8px; }
+  .alt { --kai-main: #3F9C8C; --kai-accent: #F2C14E; --kai-blush: #F4B393; }
+</style>
+<script src="kai.js"></script>
+
+<h2>Живой Кай</h2>
+<div class="row">
+  <figure><div id="live" class="stage"></div><figcaption id="say"></figcaption></figure>
+  <div>
+    <p><label>Состояние <select id="state"></select></label></p>
+    <p><label>Анимация <select id="anim"></select></label></p>
+    <p><button id="pal">Сменить палитру (CSS-переменные)</button></p>
+  </div>
+</div>
+
+<h2>Состояния</h2><div class="row" id="states"></div>
+<h2>Анимации</h2><div class="row" id="anims"></div>
+<h2>Взгляд</h2><div class="row" id="looks"></div>
+<h2>Читаемость: 48 / 96 / 256 px</h2><div class="row" id="sizes"></div>
+<div class="row" id="tiny" style="margin-top:12px"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const cell = (parent, label, size) => {
+  const fig = document.createElement('figure');
+  fig.innerHTML = `<div class="stage" style="width:${size}px;height:${size}px"></div><figcaption>${label}</figcaption>`;
+  parent.append(fig);
+  return fig.firstChild;
+};
+
+const live = Kai.mount($('live'), { size: 256 });
+for (const s in Kai.STATES) $('state').add(new Option(Kai.STATES[s].ru, s));
+for (const a in Kai.ANIMS) $('anim').add(new Option(Kai.ANIMS[a].ru, a));
+const sync = () => { $('state').value = live.state; $('anim').value = live.anim; $('say').textContent = Kai.STATES[live.state].say; };
+$('state').onchange = e => { live.set({ state: e.target.value }); sync(); };
+$('anim').onchange = e => { live.set({ anim: e.target.value, state: Kai.ANIMS[e.target.value].state }); sync(); };
+$('pal').onclick = () => document.body.classList.toggle('alt');
+sync();
+
+for (const s in Kai.STATES) Kai.mount(cell($('states'), Kai.STATES[s].ru, 128), { state: s, size: 128 });
+for (const a in Kai.ANIMS) Kai.mount(cell($('anims'), Kai.ANIMS[a].ru, 128), { anim: a, size: 128 });
+for (const d in Kai.LOOKS) cell($('looks'), d, 96).innerHTML = Kai.svg({ look: Kai.LOOKS[d] }, { size: 96, id: 'look-' + d });
+for (const px of [48, 96, 256]) Kai.mount(cell($('sizes'), px + ' px', px), { size: px });
+for (const s in Kai.STATES) Kai.mount(cell($('tiny'), '', 48), { state: s, size: 48 });
+</script>
+</html>

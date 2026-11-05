@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8">
+<script src="kai.js"></script>
+<script>
+// Растеризация SVG → PNG (base64) в сетку cols × N клеток cell×cell. Прозрачный фон.
+const load = svg => new Promise((res, rej) => {
+  const i = new Image();
+  i.onload = () => res(i); i.onerror = rej;
+  i.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+});
+async function grid(svgs, cols, cell = Kai.SIZE) {
+  const c = document.createElement('canvas');
+  c.width = cols * cell; c.height = Math.ceil(svgs.length / cols) * cell;
+  const g = c.getContext('2d');
+  for (let i = 0; i < svgs.length; i++) g.drawImage(await load(svgs[i]), (i % cols) * cell, Math.floor(i / cols) * cell, cell, cell);
+  return c.toDataURL('image/png').split(',')[1];
+}
+</script>
