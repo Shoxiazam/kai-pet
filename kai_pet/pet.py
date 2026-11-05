@@ -13,14 +13,16 @@ from __future__ import annotations
 
 import ctypes
 import datetime
+import json
 import logging
 import os
 import random
+import shutil
 import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QProcess, QProcessEnvironment, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QCursor, QGuiApplication, QPainter, QPixmap
 from PySide6.QtWidgets import QInputDialog, QMenu, QWidget
 
@@ -35,6 +37,76 @@ FPS = {"moods": 12}     # живые эмоции дышат медленнее,
 CACHE_MAX = 10          # наборов кадров в памяти; одна эмоция ≈ 3 МБ
 TIRED_EVERY_S, TIRED_FOR_S = 15 * 60, 20   # после долгой работы: раз в 15 минут устаёт на 20 секунд
 FLASH_S = 8             # эмоция по смыслу держится после кивка
+# Гардероб — те же имена, что в character/kai.js (KINDS, PALETTES, ACCESSORIES).
+KINDS = {"cat": "Котик", "fox": "Лисёнок", "bunny": "Зайка", "bear": "Мишка"}
+COLORS = {"gray": "Серый", "ginger": "Рыжий", "graphite": "Графитовый", "terracotta": "Терракотовый",
+          "sky": "Голубой", "mint": "Мятный", "lilac": "Сиреневый", "rose": "Розовый"}
+ACCESSORIES = {"scarf": ("Шарфик", "neck"), "hat": ("Шапочка", "head"), "glasses": ("Очки", "face"),
+               "headphones": ("Наушники", "head"), "crown": ("Корона", "head")}
+DEFAULT_LOOK = {"kind": "cat", "color": "gray", "acc": []}
+LOOKS_KEEP = 6          # готовых образов на диске; один ≈ 20 МБ
+EXPORT_TIMEOUT_MS = 180_000
+DRESSED = ("Как я тебе?", "Ну как, идёт?", "Новый образ готов!")
+
+
+def state_file() -> Path:
+    """Что Кай помнит между запусками (образ). Путь можно сменить переменной KAI_PET_STATE."""
+    return Path(os.environ.get("KAI_PET_STATE") or Path.home() / ".kai-pet-state.json")
+
+
+def load_state() -> dict:
+    try:
+        data = json.loads(state_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_state(key: str, value) -> None:
+    data = load_state()
+    data[key] = value
+    try:
+        state_file().write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    except OSError as e:                       # не записалось — Кай работает, просто не вспомнит образ
+        log.warning("Состояние Кая не сохранено: %s", e)
+
+
+def normalize_look(look) -> dict:
+    """Только известные вид, цвет и вещи; на каждом месте (голова, шея, лицо) — одна вещь, последняя побеждает."""
+    look = look if isinstance(look, dict) else {}
+    slots: dict[str, str] = {}
+    for item in look.get("acc") or []:
+        if item in ACCESSORIES:
+            slots[ACCESSORIES[item][1]] = item
+    return {"kind": look.get("kind") if look.get("kind") in KINDS else "cat",
+            "color": look.get("color") if look.get("color") in COLORS else "gray",
+            "acc": sorted(slots.values())}
+
+
+def look_id(look: dict) -> str:
+    look = normalize_look(look)
+    return f"{look['kind']}-{look['color']}-{'+'.join(look['acc']) or 'none'}"
+
+
+def change_look(look: dict, op: dict) -> dict:
+    """Команда гардеробу: {"kind"}, {"color"}, {"wear"}, {"remove": вещь | "all"}, {"reset"}, {"random"}."""
+    look = normalize_look(look)
+    if op.get("reset"):
+        return normalize_look(DEFAULT_LOOK)
+    if op.get("random"):
+        acc = random.sample(sorted(ACCESSORIES), random.randint(0, 2))
+        return normalize_look({"kind": random.choice(list(KINDS)), "color": random.choice(list(COLORS)), "acc": acc})
+    if op.get("kind"):
+        look["kind"] = op["kind"]
+    if op.get("color"):
+        look["color"] = op["color"]
+    if op.get("wear"):
+        look["acc"] = look["acc"] + [op["wear"]]
+    if op.get("remove"):
+        look["acc"] = [] if op["remove"] == "all" else [a for a in look["acc"] if a != op["remove"]]
+    return normalize_look(look)
+
+
 GESTURES = {"heart": "Сердечко", "like": "Лайк", "wave": "Помахать", "bye": "Попрощаться", "dance": "Станцевать",
             "hug": "Обнять", "bow": "Поклониться", "clap": "Похлопать", "jump": "Подпрыгнуть"}
 
@@ -155,6 +227,11 @@ class Pet(QWidget):
         if not (assets / "frames" / "idle").is_dir():
             raise FileNotFoundError(f"нет кадров Кая в {assets} — запустите node character/export.mjs")
         self.dir, self.cfg = assets, cfg or Config()
+        self.base = assets                         # кадры обычного Кая; образы — в assets/looks/<id>
+        self._export: QProcess | None = None
+        self._export_look: dict | None = None      # что сейчас готовится
+        self._pending_look: dict | None = None     # что попросили, пока готовилось другое
+        self.look = normalize_look(DEFAULT_LOOK)
         self.size_px = self.cfg.size
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
@@ -185,6 +262,92 @@ class Pet(QWidget):
         self._watch = QTimer(self)
         self._watch.timeout.connect(self._observe)
         self._watch.start(2000)
+        wanted = normalize_look(load_state().get("look"))
+        if wanted != self.look:
+            QTimer.singleShot(0, lambda: self.set_look(wanted, announce=False))   # образ из прошлого раза
+
+    # --- гардероб: вид, цвет, аксессуары ---
+    def look_dir(self, look: dict) -> Path:
+        return self.base if look_id(look) == look_id(DEFAULT_LOOK) else self.base / "looks" / look_id(look)
+
+    def change_look(self, op: dict) -> None:
+        """Команда гардеробу — от того образа, который сейчас надет или готовится."""
+        self.set_look(change_look(self._pending_look or self._export_look or self.look, op))
+
+    def set_look(self, look: dict, announce: bool = True) -> None:
+        look = normalize_look(look)
+        save_state("look", look)
+        if self._export is not None:            # уже переодевается — этот образ следующим
+            self._pending_look = look if look != self._export_look else None
+            return
+        if look == self.look:
+            return
+        if (self.look_dir(look) / "frames" / "idle").is_dir():
+            self._apply_look(look, announce)
+        else:
+            self._start_export(look, announce)
+
+    def _apply_look(self, look: dict, announce: bool) -> None:
+        self.look, self.dir = look, self.look_dir(look)
+        self.cache.clear()
+        self.shown = ""
+        if self.dir != self.base:
+            os.utime(self.dir)                  # свежий образ не удалится при уборке
+        if announce:
+            self.play("wave")
+            self.bubble.say(random.choice(DRESSED), 6000)
+
+    def _start_export(self, look: dict, announce: bool) -> None:
+        """Кадры нового образа рисуются в фоне (≈20 с): node character/export.mjs с KAI_LOOK и KAI_OUT."""
+        node, script = shutil.which("node"), self.base.parent / "character" / "export.mjs"
+        if not node or not script.is_file():
+            log.warning("Кай не может переодеться: нет node или %s", script)
+            self.bubble.say("Не получается переодеться: нужен Node.js и Edge или Chrome.", 6000)
+            return
+        tmp = self.look_dir(look).with_name(look_id(look) + ".tmp")
+        shutil.rmtree(tmp, ignore_errors=True)
+        env = QProcessEnvironment.systemEnvironment()
+        env.insert("KAI_LOOK", json.dumps(look))
+        env.insert("KAI_OUT", str(tmp))
+        proc = QProcess(self)
+        proc.setProcessEnvironment(env)
+        proc.setProgram(node)
+        proc.setArguments([str(script)])
+        proc.finished.connect(lambda code, _status: self._export_done(look, tmp, code, announce))
+        self._export, self._export_look = proc, look
+        QTimer.singleShot(EXPORT_TIMEOUT_MS, lambda: proc.state() != QProcess.NotRunning and proc.kill())
+        proc.start()
+        if announce:
+            self.bubble.say("Переодеваюсь… минутку", 25000)
+
+    def _export_done(self, look: dict, tmp: Path, code: int, announce: bool) -> None:
+        proc, self._export, self._export_look = self._export, None, None
+        if proc is not None:
+            proc.deleteLater()
+        final = self.look_dir(look)
+        if code == 0 and (tmp / "frames" / "idle").is_dir():
+            shutil.rmtree(final, ignore_errors=True)
+            tmp.rename(final)                   # половину кадров Кай никогда не увидит: папка появляется целиком
+            self._prune_looks(keep=final)
+            if self._pending_look is None:
+                self._apply_look(look, announce)
+        else:
+            shutil.rmtree(tmp, ignore_errors=True)
+            err = bytes(proc.readAllStandardError()).decode(errors="replace")[-300:] if proc else ""
+            log.warning("Кай не переоделся (код %s): %s", code, err)
+            self.bubble.say("Не получилось переодеться. Попробую в другой раз.", 6000)
+        pending, self._pending_look = self._pending_look, None
+        if pending is not None:
+            self.set_look(pending, announce)
+
+    def _prune_looks(self, keep: Path) -> None:
+        """На диске — не больше LOOKS_KEEP образов: самые давние удаляются, надетый и новый — никогда."""
+        root = self.base / "looks"
+        dirs = sorted((d for d in root.iterdir() if d.is_dir() and not d.name.endswith(".tmp")),
+                      key=lambda d: d.stat().st_mtime, reverse=True)
+        for d in dirs[LOOKS_KEEP:]:
+            if d not in (keep, self.dir):
+                shutil.rmtree(d, ignore_errors=True)
 
     # --- API: подключение к своему ассистенту ---
     def set_status(self, status: str) -> None:
@@ -239,6 +402,8 @@ class Pet(QWidget):
             return False
         self.gesture(act.anim, act.times)
         self.say(act.say, 6000)
+        if act.look:                           # «надень шарф», «стань рыжим», «верни как было»
+            self.change_look(act.look)
         return True
 
     # --- что делаете вы ---
@@ -379,6 +544,24 @@ class Pet(QWidget):
         hints.setChecked(self.hints)
         hints.toggled.connect(lambda on: setattr(self, "hints", on))
         menu.addAction(hints)
+        dress = menu.addMenu("Внешность")
+        current = self._pending_look or self._export_look or self.look
+        for title, options, key in (("Вид", KINDS, "kind"), ("Цвет", COLORS, "color")):
+            sub = dress.addMenu(title)
+            for name, ru in options.items():
+                action = sub.addAction(ru)
+                action.setCheckable(True)
+                action.setChecked(current[key] == name)
+                action.triggered.connect(lambda _c=False, k=key, n=name: self.change_look({k: n}))
+        things = dress.addMenu("Аксессуары")
+        for name, (ru, _slot) in ACCESSORIES.items():
+            action = things.addAction(ru)
+            action.setCheckable(True)
+            action.setChecked(name in current["acc"])
+            action.triggered.connect(lambda on, n=name: self.change_look({"wear": n} if on else {"remove": n}))
+        dress.addSeparator()
+        dress.addAction("Удиви меня").triggered.connect(lambda _c=False: self.change_look({"random": True}))
+        dress.addAction("Как было").triggered.connect(lambda _c=False: self.change_look({"reset": True}))
         menu.addAction("Выход").triggered.connect(lambda _c=False: self.quit_requested.emit())
         menu.exec(e.globalPos())
 

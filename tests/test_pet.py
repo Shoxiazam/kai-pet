@@ -6,6 +6,8 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from unittest.mock import MagicMock  # noqa: E402
+
 import pytest  # noqa: E402
 from PySide6.QtCore import QPoint  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
@@ -72,8 +74,9 @@ def test_config_file(tmp_path):
 
 # --- окно Кая ---
 @pytest.fixture
-def pet(monkeypatch):
+def pet(monkeypatch, tmp_path):
     QApplication.instance() or QApplication([])
+    monkeypatch.setenv("KAI_PET_STATE", str(tmp_path / "state.json"))   # образ — свой у каждого теста
     monkeypatch.setattr(pet_module, "active_window", lambda: ("", "explorer.exe"))
     monkeypatch.setattr(pet_module, "input_idle_s", lambda: 0.0)
     monkeypatch.setattr(pet_module, "background_mood", lambda app, *_: app or "idle")
@@ -197,3 +200,54 @@ def test_work_hides_answer_bubble_but_keeps_question(pet):
     pet.ask("Отправить?")
     pet.set_status("working")
     assert pet.bubble.isVisible() and pet.bubble.asking
+
+
+# --- гардероб ---
+def test_look_rules():
+    from kai_pet.pet import change_look, look_id, normalize_look
+    assert normalize_look({"kind": "dragon", "color": "plaid", "acc": ["cape", "scarf"]}) == \
+        {"kind": "cat", "color": "gray", "acc": ["scarf"]}
+    look = change_look(change_look({}, {"wear": "hat"}), {"wear": "crown"})
+    assert look["acc"] == ["crown"]                       # на голове одна вещь
+    look = change_look(look, {"wear": "glasses"})
+    assert look_id(look) == "cat-gray-crown+glasses"
+    assert change_look(look, {"remove": "all"})["acc"] == []
+    assert change_look(look, {"reset": True}) == {"kind": "cat", "color": "gray", "acc": []}
+
+
+def test_command_changes_look(pet, monkeypatch):
+    started = []
+    monkeypatch.setattr(pet, "_start_export", lambda look, announce: started.append(look))
+    assert pet.command("надень шарф")
+    assert started and started[0]["acc"] == ["scarf"] and pet.look["acc"] == []   # пока готовится — старый образ
+    from kai_pet.pet import load_state
+    assert load_state()["look"]["acc"] == ["scarf"]       # образ запомнен
+
+
+def test_export_done_and_failure(pet, tmp_path, monkeypatch):
+    import shutil as sh
+    monkeypatch.setattr(pet, "base", tmp_path)
+    look = {"kind": "bear", "color": "sky", "acc": []}
+    tmp = tmp_path / "looks" / "bear-sky-none.tmp"
+    (tmp / "frames" / "idle").mkdir(parents=True)
+    for f in sorted((pet_module.ASSETS / "frames" / "idle").glob("*.png"))[:2]:
+        sh.copy(f, tmp / "frames" / "idle")
+    pet._export, pet._export_look = MagicMock(), look
+    pet._export_done(look, tmp, 0, True)
+    assert (tmp_path / "looks" / "bear-sky-none").is_dir() and pet.look == look
+    pet._tick()
+    bad = tmp_path / "looks" / "fox-mint-none.tmp"
+    bad.mkdir()
+    pet._export = MagicMock()
+    pet._export.readAllStandardError.return_value = b"boom"
+    pet._export_done({"kind": "fox", "color": "mint", "acc": []}, bad, 1, True)
+    assert not bad.exists() and pet.look == look and "Не получилось" in pet.bubble.text.text()
+
+
+def test_broken_state_file_is_ignored(tmp_path, monkeypatch):
+    from kai_pet.pet import load_state, save_state
+    monkeypatch.setenv("KAI_PET_STATE", str(tmp_path / "s.json"))
+    (tmp_path / "s.json").write_text("{битый", encoding="utf-8")
+    assert load_state() == {}
+    save_state("look", {"kind": "fox"})
+    assert load_state()["look"] == {"kind": "fox"}

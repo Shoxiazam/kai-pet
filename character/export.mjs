@@ -8,7 +8,10 @@ import { createRequire } from 'node:module';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const Kai = createRequire(import.meta.url)('./kai.js');
-const OUT = join(here, '..', 'assets');
+// Образ из гардероба: KAI_LOOK='{"kind":"fox","color":"ginger","acc":["scarf"]}', кадры — в KAI_OUT.
+// Так питомец сам готовит кадры нового образа; без переменных — обычный экспорт с превью.
+const LOOK = process.env.KAI_LOOK ? JSON.parse(process.env.KAI_LOOK) : null;
+const OUT = process.env.KAI_OUT || join(here, '..', 'assets');
 const DOCS = join(here, '..', 'docs');
 const BROWSERS = [process.env.KAI_BROWSER,
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -16,7 +19,7 @@ const BROWSERS = [process.env.KAI_BROWSER,
 const exe = BROWSERS.find(p => p && existsSync(p));
 if (!exe) throw new Error('Не найден Edge/Chrome. Укажите путь в KAI_BROWSER.');
 
-const port = 9333, profile = mkdtempSync(join(tmpdir(), 'kai-'));
+const port = 9300 + Math.floor(Math.random() * 600), profile = mkdtempSync(join(tmpdir(), 'kai-'));  // два экспорта не мешают друг другу
 const browser = spawn(exe, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
   '--no-first-run', '--disable-gpu', 'about:blank'], { stdio: 'ignore' });
 
@@ -46,6 +49,7 @@ try {
 
   await send('Page.navigate', { url: pathToFileURL(join(here, 'export.html')).href });
   for (let i = 0; i < 50 && (await ev('typeof grid').catch(() => '')) !== 'function'; i++) await new Promise(r => setTimeout(r, 100));
+  if (LOOK) await ev(`Object.assign(Kai.LOOK, ${JSON.stringify(LOOK)}), true`);
 
   for (const d of ['frames', 'states', 'moods', 'look']) rmSync(join(OUT, d), { recursive: true, force: true });
   const save = async (rel, expr) => {
@@ -65,11 +69,19 @@ try {
   // Живые эмоции для питомца: дыхание и моргание поверх каждого состояния, 24 кадра на 12 к/с.
   for (const s of states) for (let i = 0; i < 24; i++)
     await save(`moods/${s}/${s}_${pad(i)}.png`, `grid([Kai.frame(${JSON.stringify(s)}, 'idle', ${i / 24})], 1)`);
-  const statesGrid = `${JSON.stringify(states)}.map(s => Kai.frame(s, 'idle', 0))`;
-  await saveDoc('states_grid.png', `grid(${statesGrid}, 5)`);
   for (const d in Kai.LOOKS) await save(`look/${d}.png`, `grid([Kai.svg({ look: Kai.LOOKS.${d} })], 1)`);
-  await saveDoc('look_grid.png', `grid(Object.values(Kai.LOOKS).map(l => Kai.svg({ look: l })), 5)`);
-  await saveDoc('anims_grid.png', `grid(Object.keys(Kai.ANIMS).map(a => Kai.frame(null, a, 0.3)), 5)`);
+  if (!LOOK) {
+    const statesGrid = `${JSON.stringify(states)}.map(s => Kai.frame(s, 'idle', 0))`;
+    await saveDoc('states_grid.png', `grid(${statesGrid}, 5)`);
+    await saveDoc('look_grid.png', `grid(Object.values(Kai.LOOKS).map(l => Kai.svg({ look: l })), 5)`);
+    await saveDoc('anims_grid.png', `grid(Object.keys(Kai.ANIMS).map(a => Kai.frame(null, a, 0.3)), 5)`);
+    // Гардероб: все виды во всех цветах и все аксессуары
+    await saveDoc('wardrobe_kinds_colors.png', `grid(Object.keys(Kai.KINDS).flatMap(k => Object.keys(Kai.PALETTES).map(c =>
+      Kai.svg({}, { look: { kind: k, color: c, acc: [] } }))), 8)`);
+    await saveDoc('wardrobe_accessories.png', `grid([['scarf'], ['hat'], ['glasses'], ['headphones'], ['crown'],
+      ['hat', 'scarf', 'glasses'], ['crown', 'scarf'], ['headphones', 'glasses']].map((a, i) =>
+      Kai.svg({}, { look: { kind: Object.keys(Kai.KINDS)[i % 4], color: Object.keys(Kai.PALETTES)[i], acc: a } })), 4)`);
+  }
 
   ws.close();
   console.log('PNG сохранены в', OUT);

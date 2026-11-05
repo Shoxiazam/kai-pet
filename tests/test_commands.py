@@ -57,3 +57,23 @@ def test_any_gesture_picks_a_real_one():
 ])
 def test_agent_tasks_are_not_taken(text):
     assert parse(text) is None
+
+
+@pytest.mark.parametrize("text, look", [
+    ("Кай, надень шарф", {"wear": "scarf"}),
+    ("надень очки", {"wear": "glasses"}),
+    ("сними всё", {"remove": "all"}),
+    ("стань рыжим", {"color": "ginger"}),
+    ("стань лисёнком", {"kind": "fox"}),
+    ("превратись в зайчика", {"kind": "bunny"}),
+    ("переоденься", {"random": True}),
+    ("верни как было", {"reset": True}),
+])
+def test_wardrobe_commands(text, look):
+    act = parse(text)
+    assert act and act.look == look and act.say
+
+
+@pytest.mark.parametrize("text", ["сними скриншот", "стань на паузу", "будь внимательнее"])
+def test_wardrobe_does_not_take_other_tasks(text):
+    assert parse(text) is None

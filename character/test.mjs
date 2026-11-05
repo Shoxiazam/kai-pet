@@ -26,3 +26,17 @@ const one = Kai.frame('neutral', 'idle', 0);
 for (const id of ['body', 'ear-l', 'ear-r', 'tail', 'eyes', 'mouth', 'spark']) assert.ok(one.includes(`id="${id}"`), `нет слоя ${id}`);
 for (const c of Object.values(Kai.PALETTE)) assert.ok(one.includes(c), `цвет ${c} не используется`);
 console.log('ok:', Object.keys(Kai.STATES).length, 'состояний,', Object.keys(Kai.ANIMS).length, 'анимаций');
+
+// Гардероб: каждый вид в каждом цвете с каждым аксессуаром рисуется без мусора и с нужными слоями.
+for (const kind in Kai.KINDS) for (const color in Kai.PALETTES) for (const a of [[], ...Object.keys(Kai.ACCESSORIES).map(x => [x])]) {
+  const look = { kind, color, acc: a };
+  for (const anim of ['idle', 'jump', 'dance']) {
+    const s = Kai.frame(null, anim, 0.42, { look });
+    assert.ok(!/NaN|undefined/.test(s), `${Kai.lookId(look)}/${anim}: мусор в SVG`);
+    for (const x of a) assert.ok(s.includes(`id="acc-${x}"`), `${Kai.lookId(look)}: нет аксессуара ${x}`);
+  }
+}
+assert.equal(Kai.lookId({}), 'cat-gray-none');
+assert.equal(Kai.lookId({ kind: 'fox', acc: ['scarf', 'hat'] }), 'fox-gray-hat+scarf');
+console.log('ok: гардероб', Object.keys(Kai.KINDS).length, 'вида ×', Object.keys(Kai.PALETTES).length, 'цветов ×',
+  Object.keys(Kai.ACCESSORIES).length, 'аксессуаров');

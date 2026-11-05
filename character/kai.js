@@ -11,6 +11,29 @@ const PALETTE = {
   blush:  '#F6A9A0', // розовый: щёки, ушки, носик, язычок
   spark:  '#D97757', // терракотовый лучистый знак на груди
 };
+// ── Гардероб: цвета шерсти, виды (ушки и хвост) и аксессуары. Мимика, позы и жесты у всех видов общие.
+const PALETTES = {
+  gray: PALETTE,
+  ginger: { ...PALETTE, main: '#E39B5F', accent: '#F7CF7A' },
+  graphite: { ...PALETTE, main: '#6E6765', cream: '#EDE6DC', ink: '#231D1B', blush: '#E99A9A' },
+  terracotta: { ...PALETTE, main: '#D97757', ink: '#3D2B1F', blush: '#F4B393', spark: '#B5523A' },
+  sky: { ...PALETTE, main: '#A3BBDA', ink: '#2F3442', accent: '#F2C14E', blush: '#F2A7B5' },
+  mint: { ...PALETTE, main: '#98CFB9', ink: '#26352F', accent: '#F2C14E' },
+  lilac: { ...PALETTE, main: '#BBA8D8', ink: '#2E2738', accent: '#F2C14E', blush: '#F2A7C0' },
+  rose: { ...PALETTE, main: '#EDB4C3', ink: '#3B2A31', accent: '#F2C14E', blush: '#F28CA0', spark: '#C8553D' },
+};
+const COLOR_NAMES = { gray: 'Серый', ginger: 'Рыжий', graphite: 'Графитовый', terracotta: 'Терракотовый',
+  sky: 'Голубой', mint: 'Мятный', lilac: 'Сиреневый', rose: 'Розовый' };
+const KINDS = { cat: 'Котик', fox: 'Лисёнок', bunny: 'Зайка', bear: 'Мишка' };
+// slot: на голове одна вещь, очки и шарф — к чему угодно
+const ACCESSORIES = { scarf: { ru: 'Шарфик', slot: 'neck' }, hat: { ru: 'Шапочка', slot: 'head' },
+  glasses: { ru: 'Очки', slot: 'face' }, headphones: { ru: 'Наушники', slot: 'head' }, crown: { ru: 'Корона', slot: 'head' } };
+const LOOK = { kind: 'cat', color: 'gray', acc: [] };   // текущий образ; svg(..., { look }) может переопределить
+const lookId = l => {
+  const x = { ...LOOK, ...l };
+  return `${x.kind}-${x.color}-${[...(x.acc || [])].sort().join('+') || 'none'}`;
+};
+
 const SIZE = 256;      // единый холст для всех кадров
 const OUT = 5;         // толщина контура
 const TAU = Math.PI * 2;
@@ -245,6 +268,17 @@ const ANIMS = {
 const BODY = 'M128,102 C170,102 198,132 198,170 C198,206 168,226 128,226 C88,226 58,206 58,170 C58,132 86,102 128,102 Z';
 const EAR = 'M-23,8 C-23,-10 -10,-30 0,-41 Q4,-45 8,-41 C18,-29 24,-10 23,8 Z'; // кошачье ухо: широкое основание, короткий кончик
 const EAR_IN = 'M-12,6 C-12,-6 -5,-20 2,-29 C9,-19 13,-6 12,6 Z';
+// Ушки по видам: контур, внутренняя часть, наклон наружу, янтарный кончик (cx, cy, r) или null.
+const EARS = {
+  cat: { out: EAR, in: EAR_IN, angle: 14, tip: [4, -42, 11] },
+  fox: { out: 'M-20,8 C-21,-18 -9,-44 3,-56 Q9,-62 14,-55 C22,-35 22,-12 20,8 Z',
+    in: 'M-10,6 C-10,-12 -4,-30 3,-41 C9,-29 11,-12 10,6 Z', inner: 'cream', angle: 14, tip: [7, -56, 15] },
+  bunny: { out: 'M-11,8 C-17,-26 -13,-60 0,-66 C13,-60 17,-26 11,8 Z',
+    in: 'M-5,4 C-9,-22 -7,-48 0,-54 C7,-48 9,-22 5,4 Z', angle: 6, tip: [0, -66, 9] },
+  bear: { out: 'M-17,-6 A17,17 0 1 1 17,-6 A17,17 0 1 1 -17,-6 Z',
+    in: 'M-9,-6 A9,9 0 1 1 9,-6 A9,9 0 1 1 -9,-6 Z', angle: 22, tip: null },
+};
+const ACC_COLOR = { scarf: '#E05A47', hat: '#5B8DEF', crown: '#F2C14E', phones: '#5B6474', cups: '#E05A47' };
 
 const star = (x, y, r) => `M${f(x)},${f(y - r)} Q${f(x)},${f(y)} ${f(x + r)},${f(y)} Q${f(x)},${f(y)} ${f(x)},${f(y + r)} ` +
   `Q${f(x)},${f(y)} ${f(x - r)},${f(y)} Q${f(x)},${f(y)} ${f(x)},${f(y - r)}Z`;
@@ -297,26 +331,37 @@ function mouth(type, open, ink, blush) {
 function svg(pose, opt = {}) {
   const p = { ...BASE, ...expand(pose) };
   const id = opt.id || 'kai', size = opt.size || SIZE;
+  const look = { ...LOOK, ...(opt.look || {}) };
+  const kind = KINDS[look.kind] ? look.kind : 'cat', wear = new Set(look.acc || []);
+  const pal = PALETTES[look.color] || PALETTE;
+  const col = k => `var(--kai-${k},${pal[k]})`;   // цвет образа; CSS-переменные --kai-* по-прежнему важнее
   const ink = col('ink'), main = col('main'), cream = col('cream'), acc = col('accent'), blush = col('blush');
   const outline = w => `fill:none;stroke:${ink};stroke-width:${w};stroke-linecap:round;stroke-linejoin:round`;
   const fillOut = c => `fill:${c};stroke:${ink};stroke-width:${OUT};stroke-linejoin:round`;
   const [lx, ly] = p.look;
   const tilt = `rotate(${f(p.tilt)} 128 160)`;
 
+  const E = EARS[kind];
   const ear = side => {
-    const a = side * (14 + (side < 0 ? p.earL : p.earR));
+    const a = side * (E.angle + (side < 0 ? p.earL : p.earR));
+    const tip = E.tip ? `<circle cx="${E.tip[0]}" cy="${E.tip[1]}" r="${E.tip[2]}" clip-path="url(#${id}-ear)" style="fill:${acc}"/>` : '';
     return `<g id="ear-${side < 0 ? 'l' : 'r'}" transform="translate(${side < 0 ? 92 : 164} 120) rotate(${f(a)})${side < 0 ? ' scale(-1 1)' : ''}">` +
-      `<path d="${EAR}" style="fill:${main}"/><path d="${EAR_IN}" style="fill:${blush}"/>` +
-      `<circle cx="4" cy="-42" r="11" clip-path="url(#${id}-ear)" style="fill:${acc}"/>` +
-      `<path d="${EAR}" style="${outline(OUT)}"/></g>`;
+      `<path d="${E.out}" style="fill:${main}"/><path d="${E.in}" style="fill:${E.inner === 'cream' ? cream : blush}"/>${tip}` +
+      `<path d="${E.out}" style="${outline(OUT)}"/></g>`;
   };
 
   const c = p.curl, tx = 40 - 18 * c, ty = -60 - 4 * c;
   const tailD = `M0,0 C24,6 54,${f(-20 - 14 * c)} ${f(tx)},${f(ty)}`;
-  const tail = `<g id="tail" transform="translate(180 208) rotate(${f(-p.tail)})">` +
-    `<path d="${tailD}" style="${outline(15 + 2 * OUT)}"/><path d="${tailD}" style="fill:none;stroke:${main};stroke-width:15;stroke-linecap:round"/>` +
-    `<path d="${tailD}" style="fill:none;stroke:${ink};stroke-width:15;stroke-dasharray:7 10;stroke-dashoffset:-14;opacity:.28"/>` + // полоски
-    `<circle cx="${f(tx)}" cy="${f(ty)}" r="7.5" style="fill:${cream}"/></g>`;
+  const tailBody = {
+    cat: `<path d="${tailD}" style="${outline(15 + 2 * OUT)}"/><path d="${tailD}" style="fill:none;stroke:${main};stroke-width:15;stroke-linecap:round"/>` +
+      `<path d="${tailD}" style="fill:none;stroke:${ink};stroke-width:15;stroke-dasharray:7 10;stroke-dashoffset:-14;opacity:.28"/>` + // полоски
+      `<circle cx="${f(tx)}" cy="${f(ty)}" r="7.5" style="fill:${cream}"/>`,
+    fox: `<path d="${tailD}" style="${outline(24 + 2 * OUT)}"/><path d="${tailD}" style="fill:none;stroke:${main};stroke-width:24;stroke-linecap:round"/>` +
+      `<circle cx="${f(tx)}" cy="${f(ty)}" r="12" style="fill:${cream}"/>`,                 // пушистый хвост со светлым кончиком
+    bunny: `<circle cx="16" cy="-8" r="15" style="${fillOut(cream)}"/>`,                     // хвостик-помпон
+    bear: `<circle cx="14" cy="-6" r="11" style="${fillOut(main)}"/>`,                       // короткий круглый хвостик
+  }[kind];
+  const tail = `<g id="tail" transform="translate(180 208) rotate(${f(-p.tail)})">${tailBody}</g>`;
 
   const body = `<g id="body"><path d="${BODY}" style="${fillOut(main)}"/>` +
     `<ellipse cx="98" cy="126" rx="17" ry="8" transform="rotate(-32 98 126)" style="fill:${cream};opacity:.35"/>` +
@@ -354,23 +399,46 @@ function svg(pose, opt = {}) {
     `<path d="M-7,1.5 Q0,-1.5 7,1.5" transform="translate(99 ${browY(p.openL, p.browLY)}) rotate(${f(p.browL)})"/>` +
     `<path d="M-7,1.5 Q0,-1.5 7,1.5" transform="translate(157 ${browY(p.openR, p.browRY)}) rotate(${f(-p.browR)})"/></g>`;
 
-  const face = `<g id="face" transform="${tilt} translate(${f(lx * 7)} ${f(ly * 5)})">` +
-    `<g id="stripes" style="fill:none;stroke:${ink};stroke-width:4;stroke-linecap:round;opacity:.3">` +
-    `<path d="M117,108 L120,119"/><path d="M128,106 L128,120"/><path d="M139,108 L136,119"/></g>` +
+  const stripes = kind === 'cat' ? `<g id="stripes" style="fill:none;stroke:${ink};stroke-width:4;stroke-linecap:round;opacity:.3">` +
+    `<path d="M117,108 L120,119"/><path d="M128,106 L128,120"/><path d="M139,108 L136,119"/></g>` : '';
+  const whiskers = kind === 'bear' ? '' : `<g id="whiskers" style="fill:none;stroke:${ink};stroke-width:2.2;stroke-linecap:round;opacity:.8">` +
+    `<path d="M107,167 L80,161"/><path d="M107,172 L79,172"/><path d="M107,177 L81,184"/>` +
+    `<path d="M149,167 L176,161"/><path d="M149,172 L177,172"/><path d="M149,177 L175,184"/></g>`;
+  const glasses = wear.has('glasses') ? `<g id="acc-glasses" style="fill:${cream};fill-opacity:.18;stroke:${ink};stroke-width:3.5">` +
+    `<circle cx="99" cy="151" r="18"/><circle cx="157" cy="151" r="18"/>` +
+    `<path d="M117,149 Q128,142 139,149" style="fill:none"/></g>` : '';
+
+  const face = `<g id="face" transform="${tilt} translate(${f(lx * 7)} ${f(ly * 5)})">` + stripes +
     `<g id="muzzle" style="fill:${cream}"><ellipse cx="120" cy="170" rx="11" ry="8.5"/><ellipse cx="136" cy="170" rx="11" ry="8.5"/></g>` +
     `<g id="cheeks" style="fill:${blush};opacity:${f(p.blush)}"><ellipse cx="86" cy="170" rx="9" ry="5.5"/><ellipse cx="170" cy="170" rx="9" ry="5.5"/></g>` +
-    `<g id="whiskers" style="fill:none;stroke:${ink};stroke-width:2.2;stroke-linecap:round;opacity:.8">` +
-    `<path d="M107,167 L80,161"/><path d="M107,172 L79,172"/><path d="M107,177 L81,184"/>` +
-    `<path d="M149,167 L176,161"/><path d="M149,172 L177,172"/><path d="M149,177 L175,184"/></g>` +
+    whiskers +
     `<g id="eyes" transform="translate(${f(lx * 3)} ${f(ly * 3)})">` +
-    eye(99, 151, p.eyeL, p.openL, es, p.sparkle, 1, ink, cream) + eye(157, 151, p.eyeR, p.openR, es, p.sparkle, -1, ink, cream) + '</g>' +
+    eye(99, 151, p.eyeL, p.openL, es, p.sparkle, 1, ink, cream) + eye(157, 151, p.eyeR, p.openR, es, p.sparkle, -1, ink, cream) + glasses + '</g>' +
     brows + `<g id="mouth">${mouth(p.mouth, p.mouthOpen, ink, blush)}</g></g>`;
+
+  // Аксессуары: шарф — на шее под лапками, головные — поверх головы и наклоняются вместе с ней.
+  const scarf = wear.has('scarf') ? `<g id="acc-scarf" style="fill:${ACC_COLOR.scarf};stroke:${ink};stroke-width:4;stroke-linejoin:round">` +
+    `<path d="M160,192 L172,228 L186,223 L178,188 Z"/><path d="M68,178 Q128,197 188,178 L190,188 Q128,207 66,188 Z"/>` +
+    `<path d="M80,185 Q128,201 176,185" style="fill:none;stroke:${cream};stroke-width:2.5;opacity:.7"/></g>` : '';
+  let head = '';
+  if (wear.has('hat')) head = `<g id="acc-hat" style="stroke:${ink};stroke-width:4;stroke-linejoin:round">` +
+    `<path d="M90,124 Q92,82 128,80 Q164,82 166,124 Z" style="fill:${ACC_COLOR.hat}"/>` +
+    `<path d="M86,118 Q128,108 170,118 L170,129 Q128,119 86,129 Z" style="fill:${cream}"/>` +
+    `<circle cx="128" cy="77" r="9" style="fill:${cream}"/></g>`;
+  else if (wear.has('crown')) head = `<g id="acc-crown" style="stroke:${ink};stroke-width:4;stroke-linejoin:round">` +
+    `<path d="M106,112 L106,92 L117,102 L128,86 L139,102 L150,92 L150,112 Z" style="fill:${ACC_COLOR.crown}"/>` +
+    `<circle cx="128" cy="104" r="3" style="fill:${blush};stroke-width:1.5"/></g>`;
+  else if (wear.has('headphones')) head = `<g id="acc-headphones">` +
+    `<path d="M70,150 C66,96 98,78 128,78 C158,78 190,96 186,150" style="${outline(11)}"/>` +
+    `<path d="M70,150 C66,96 98,78 128,78 C158,78 190,96 186,150" style="fill:none;stroke:${ACC_COLOR.phones};stroke-width:5;stroke-linecap:round"/>` +
+    `<g style="fill:${ACC_COLOR.cups};stroke:${ink};stroke-width:4"><ellipse cx="66" cy="156" rx="11" ry="18"/><ellipse cx="190" cy="156" rx="11" ry="18"/></g></g>`;
+  const hat = head ? `<g id="acc-head" transform="${tilt}">${head}</g>` : '';
 
   const flip = p.facing < 0 ? 'translate(256 0) scale(-1 1) ' : '';
   const T = `${flip}translate(0 ${f(p.y)}) rotate(${f(p.rot)} 128 228) translate(128 228) scale(${f(p.sx)} ${f(p.sy)}) translate(-128 -228)`;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}" width="${size}" height="${size}">` +
-    `<defs><clipPath id="${id}-ear"><path d="${EAR}"/></clipPath></defs>` +
-    `<g id="kai" transform="${T}">${tail}<g id="ears" transform="${tilt}">${ear(-1)}${ear(1)}</g>${body}${spark}${feet}${arm(-1)}${arm(1)}${heart}${face}</g></svg>`;
+    `<defs><clipPath id="${id}-ear"><path d="${E.out}"/></clipPath></defs>` +
+    `<g id="kai" transform="${T}">${tail}<g id="ears" transform="${tilt}">${ear(-1)}${ear(1)}</g>${body}${spark}${scarf}${feet}${arm(-1)}${arm(1)}${heart}${face}${hat}</g></svg>`;
 }
 
 // ── Публичный API
@@ -410,6 +478,6 @@ function mount(el, opts = {}) {
   };
 }
 
-const Kai = { PALETTE, SIZE, BASE, STATES, ANIMS, LOOKS, expand, blend, pose, svg, frame, frames, mount };
+const Kai = { PALETTE, PALETTES, COLOR_NAMES, KINDS, ACCESSORIES, LOOK, lookId, SIZE, BASE, STATES, ANIMS, LOOKS, expand, blend, pose, svg, frame, frames, mount };
 if (typeof module !== 'undefined' && module.exports) module.exports = Kai; else root.Kai = Kai;
 })(this);

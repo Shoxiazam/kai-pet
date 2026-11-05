@@ -15,6 +15,50 @@ class KaiAction:
     anim: str       # анимация или эмоция Кая (имя из kai/out/frames или kai/out/moods)
     say: str        # реплика облачком и голосом
     times: int = 2  # сколько раз проиграть анимацию
+    look: dict | None = None  # команда гардеробу: {"kind"}, {"color"}, {"wear"}, {"remove"}, {"reset"}, {"random"}
+
+
+# Гардероб: основа слова → имя в kai.js. Кай рисует только свои образы.
+_ITEMS = {"шарф": "scarf", "шапк": "hat", "шапочк": "hat", "очк": "glasses", "очеч": "glasses",
+          "наушник": "headphones", "корон": "crown"}
+_ITEM_RU = {"scarf": "шарфик", "hat": "шапочку", "glasses": "очки", "headphones": "наушники", "crown": "корону"}
+_KINDS = {"лис": "fox", "зай": "bunny", "зайч": "bunny", "кролик": "bunny", "миш": "bear", "медвед": "bear",
+          "кот": "cat", "кош": "cat"}
+_KIND_RU = {"fox": "лисёнком", "bunny": "зайкой", "bear": "мишкой", "cat": "котиком"}
+_COLORS = {"рыж": "ginger", "сер": "gray", "графит": "graphite", "черн": "graphite", "терракот": "terracotta",
+           "голуб": "sky", "син": "sky", "мят": "mint", "зелен": "mint", "сирен": "lilac", "фиолет": "lilac",
+           "розов": "rose"}
+_COLOR_RU = {"ginger": "рыжий", "gray": "серый", "graphite": "графитовый", "terracotta": "терракотовый",
+             "sky": "голубой", "mint": "мятный", "lilac": "сиреневый", "rose": "розовый"}
+
+
+def _stem(word: str, table: dict) -> str | None:
+    """Самая длинная основа из таблицы, с которой начинается слово."""
+    hits = [k for k in table if word.startswith(k)]
+    return table[max(hits, key=len)] if hits else None
+
+
+def _wardrobe(t: str) -> KaiAction | None:
+    if re.search(r"\b(?:верни(?:сь)?\s+(?:как было|прежний вид|обычный вид)|стань\s+(?:как раньше|собой|обычным))", t):
+        return KaiAction("wave", "Я снова прежний!", 1, {"reset": True})
+    if re.search(r"\b(?:переоденься|смени\s+(?:образ|вид|наряд|одежду)|удиви\s+(?:меня\s+)?нарядом)\b", t):
+        return KaiAction("wave", "Переодеваюсь!", 1, {"random": True})
+    m = re.search(r"\b(?:надень|одень|нацепи|примерь)\s+(?:(?:свой|свои|свою|мне)\s+)?(\w+)", t)
+    if m and (item := _stem(m.group(1), _ITEMS)):
+        return KaiAction("wave", f"Надеваю {_ITEM_RU[item]}!", 1, {"wear": item})
+    m = re.search(r"\b(?:сними|сбрось)\s+(?:(?:свой|свои|свою|с себя)\s+)?(\w+)", t)
+    if m:
+        if m.group(1) in ("все", "всё", "аксессуары", "наряд"):
+            return KaiAction("wave", "Снимаю всё лишнее.", 1, {"remove": "all"})
+        if item := _stem(m.group(1), _ITEMS):
+            return KaiAction("wave", f"Снимаю {_ITEM_RU[item]}.", 1, {"remove": item})
+    m = re.search(r"\b(?:стань|будь|превратись\s+в|перекрась(?:ся)?\s+в|покрась(?:ся)?\s+в)\s+(\w+)", t)
+    if m:
+        if kind := _stem(m.group(1), _KINDS):
+            return KaiAction("wave", f"Стал {_KIND_RU[kind]}!", 1, {"kind": kind})
+        if color := _stem(m.group(1), _COLORS):
+            return KaiAction("wave", f"Теперь я {_COLOR_RU[color]}!", 1, {"color": color})
+    return None
 
 
 _MESSENGER = re.compile(r"телеграм|telegram|ватсап|whatsapp|вотсап|дискорд|discord|инстаграм|instagram|"
@@ -133,6 +177,8 @@ def parse(text: str) -> KaiAction | None:
     if re.fullmatch(r"(?:пока|до свидания|до встречи)[\s!.]*", t):
         return KaiAction("bye", _pick("Пока-пока!", "До встречи!"))
 
+    if act := _wardrobe(t):
+        return act
     if _ANY_GESTURE.search(t):
         anim, phrases = random.choice([(a, p) for _r, a, p in _GESTURES if a in ("heart", "like", "clap", "dance")])
         return KaiAction(anim, random.choice(phrases), 3 if anim in ("heart", "dance") else 2)
