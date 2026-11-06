@@ -35,6 +35,7 @@ def played(monkeypatch):
 def pet(monkeypatch, tmp_path, played):
     QApplication.instance() or QApplication([])
     monkeypatch.setenv("KAI_PET_STATE", str(tmp_path / "state.json"))   # память — своя у каждого теста
+    monkeypatch.setenv("KAI_ACCESSORIES", str(tmp_path / "acc"))           # и папка своих вещей
     monkeypatch.setattr(pet_module, "active_window", lambda: ("", "explorer.exe"))
     monkeypatch.setattr(pet_module, "active_window_rect", lambda: None)
     monkeypatch.setattr(pet_module, "input_idle_s", lambda: 0.0)
@@ -205,3 +206,96 @@ def test_menu_builds_with_everything(pet, monkeypatch):
     for title in ("Угостить печенькой", "Внешность", "Где сидеть", "Повернуть", "Настройки", "Выход"):
         assert title in seen
     assert any(t.startswith("Дружба:") for t in seen)
+
+
+# --- охота за курсором ---
+def test_shaking_rule():
+    zigzag = [(i * 0.05, 0 if i % 2 else 200) for i in range(8)]            # 7 рывков по 200 px за 0,35 с
+    assert pet_module.shaking(zigzag, 0.4)
+    assert not pet_module.shaking([(i * 0.05, i * 100) for i in range(8)], 0.4)   # просто ведут в одну сторону
+    assert not pet_module.shaking([(i * 0.05, 0 if i % 2 else 20) for i in range(8)], 0.4)   # дрожь руки
+    assert not pet_module.shaking(zigzag, 5.0)                                # это было давно
+
+
+def test_kai_hunts_shaken_cursor(pet, monkeypatch, played):
+    pet.move(500, 500)
+    xs = iter([600, 800] * 10)
+    monkeypatch.setattr(pet, "_cursor", lambda: QPoint(next(xs), 560))
+    for _ in range(8):
+        pet._maybe_chase()
+    assert pet.once == "jump" and "meow.wav" in played          # в углу — прыгает на месте
+    pet.once = None
+    pet._maybe_chase()
+    assert pet.once is None                                      # и не чаще раза в 6 секунд
+    pet.dock, pet._last_chase = "free", 0.0
+    xs2 = iter([600, 800] * 10)
+    monkeypatch.setattr(pet, "_cursor", lambda: QPoint(next(xs2), 560))
+    for _ in range(8):
+        pet._maybe_chase()
+    assert pet.once == "runRight" and pet._run is not None       # «где оставлю» — подбегает к курсору
+    pet._run.stop()
+    pet._caught()
+    assert pet.once == "jump"
+    pet.chase_on, pet.once, pet._last_chase = False, None, 0.0
+    for _ in range(8):
+        pet._maybe_chase()
+    assert pet.once is None                                      # выключено в настройках
+
+
+# --- свои вещи ---
+def test_custom_accessories(tmp_path, monkeypatch):
+    folder = tmp_path / "acc"
+    folder.mkdir()
+    (folder / "head-bow.svg").write_text("<svg/>", encoding="utf-8")
+    (folder / "neck-галстук.svg").write_text("<svg/>", encoding="utf-8")
+    (folder / "звезда.svg").write_text("<svg/>", encoding="utf-8")
+    monkeypatch.setenv("KAI_ACCESSORIES", str(folder))
+    mine = pet_module.custom_accessories()
+    assert mine["my_bow"][:2] == ("bow", "head")
+    ids = {name: (k, slot) for k, (name, slot, _f) in mine.items()}
+    assert ids["галстук"][1] == "neck" and ids["звезда"][1] == "head"
+    assert all(k.startswith("my_") and k.isascii() for k in mine)          # имя папки образа — латиница
+    look = pet_module.normalize_look({"acc": ["my_bow", "hat", "scarf", ids["галстук"][0]]})
+    assert look["acc"] == sorted(["hat", ids["галстук"][0]])             # на голове и шее — по одной вещи
+    (folder / "head-bow.svg").unlink()
+    assert pet_module.normalize_look({"acc": ["my_bow"]})["acc"] == []    # файл убрали — вещь пропала
+
+
+def test_custom_accessory_goes_to_export(pet, monkeypatch, tmp_path):
+    folder = tmp_path / "acc"
+    folder.mkdir()
+    (folder / "head-bow.svg").write_text("<svg><circle r='5'/></svg>", encoding="utf-8")
+    started = {}
+    monkeypatch.setattr(pet_module.shutil, "which", lambda name: "node")
+    monkeypatch.setattr(pet_module.QProcess, "start", lambda self: started.update(
+        custom=self.processEnvironment().value("KAI_CUSTOM")))
+    pet._start_export(pet_module.normalize_look({"acc": ["my_bow"]}), announce=False)
+    assert "circle" in started["custom"] and '"slot": "head"' in started["custom"]
+    pet._export.finished.disconnect()
+    pet._export = None
+
+
+def test_menu_lists_custom_things_and_chase_toggle(pet, monkeypatch, tmp_path):
+    (tmp_path / "acc").mkdir()
+    (tmp_path / "acc" / "face-mask.svg").write_text("<svg/>", encoding="utf-8")
+    titles = []
+
+    def walk(menu):
+        for a in menu.actions():
+            titles.append(a.text())
+            if a.menu():
+                walk(a.menu())
+    monkeypatch.setattr(pet, "_show_menu", lambda menu, pos: walk(menu))
+
+    class Ev:
+        def globalPos(self):
+            return QPoint(0, 0)
+    pet.contextMenuEvent(Ev())
+    assert "mask" in titles and "Свои вещи (папка)…" in titles and "Охотиться за мышкой" in titles
+
+
+def test_example_accessory_renders():
+    """Пример из examples/ — корректный SVG, который можно положить в папку."""
+    import xml.etree.ElementTree as ET
+    root = ET.parse(Path(__file__).resolve().parent.parent / "examples" / "accessories" / "head-bow.svg").getroot()
+    assert root.get("viewBox") == "0 0 256 256"

@@ -50,6 +50,8 @@ try {
   await send('Page.navigate', { url: pathToFileURL(join(here, 'export.html')).href });
   for (let i = 0; i < 50 && (await ev('typeof grid').catch(() => '')) !== 'function'; i++) await new Promise(r => setTimeout(r, 100));
   if (LOOK) await ev(`Object.assign(Kai.LOOK, ${JSON.stringify(LOOK)}), true`);
+  // Свои вещи (KAI_CUSTOM='{"my_bow":{"slot":"head","svg":"<svg…"}}') — питомец читает их из папки accessories.
+  if (process.env.KAI_CUSTOM) await ev(`Object.assign(Kai.CUSTOM, ${JSON.stringify(JSON.parse(process.env.KAI_CUSTOM))}), true`);
 
   for (const d of ['frames', 'states', 'moods', 'look']) rmSync(join(OUT, d), { recursive: true, force: true });
   const save = async (rel, expr) => {

@@ -16,18 +16,21 @@ from __future__ import annotations
 import collections
 import ctypes
 import datetime
+import hashlib
 import json
 import logging
 import math
 import os
 import random
+import re
 import shutil
 import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QProcess, QProcessEnvironment, QRect, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QCursor, QGuiApplication, QPainter, QPixmap
+from PySide6.QtCore import (QCoreApplication, QEvent, QPoint, QProcess, QProcessEnvironment, QPropertyAnimation, QRect,
+                            Qt, QTimer, QUrl, Signal)
+from PySide6.QtGui import QAction, QCursor, QDesktopServices, QGuiApplication, QPainter, QPixmap
 from PySide6.QtWidgets import QInputDialog, QMenu, QWidget
 
 from . import commands, sounds
@@ -60,6 +63,11 @@ COLORS = {"gray": "Серый", "ginger": "Рыжий", "graphite": "Графи�
 ACCESSORIES = {"scarf": ("Шарфик", "neck"), "hat": ("Шапочка", "head"), "glasses": ("Очки", "face"),
                "headphones": ("Наушники", "head"), "crown": ("Корона", "head")}
 DEFAULT_LOOK = {"kind": "cat", "color": "gray", "acc": []}
+SLOTS = ("head", "neck", "face")
+CUSTOM_MAX_BYTES = 200_000   # своя вещь — картинка, а не фотоальбом
+CHASE_COOLDOWN_S = 6    # охотится за курсором не чаще
+CHASE_RADIUS = 500      # трясти мышкой надо рядом с Каем
+CHASE_STEP = 220        # на сколько пикселей подбегает (только если сидит «где оставлю»)
 LOOKS_KEEP = 6          # готовых образов на диске; один ≈ 20 МБ
 EXPORT_TIMEOUT_MS = 180_000
 DRESSED = ("Как я тебе?", "Ну как, идёт?", "Новый образ готов!")
@@ -129,28 +137,42 @@ def active_window() -> tuple[str, str]:
     """(заголовок, имя программы) окна впереди."""
     if sys.platform != "win32":
         return "", ""
-    user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
-    kernel32.OpenProcess.restype = ctypes.c_void_p
-    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
-    kernel32.QueryFullProcessImageNameW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_wchar_p,
-                                                    ctypes.POINTER(ctypes.c_ulong)]
+    user32 = ctypes.windll.user32
     hwnd = _foreground()
     if not hwnd:
         return "", ""
     length = user32.GetWindowTextLengthW(hwnd)
     title = ctypes.create_unicode_buffer(length + 1)
     user32.GetWindowTextW(hwnd, title, length + 1)
+    return title.value, os.path.basename(_exe_of(hwnd))
+
+
+def _exe_of(hwnd) -> str:
+    """Полный путь программы, которой принадлежит окно; "" — не удалось."""
+    user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.QueryFullProcessImageNameW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_wchar_p,
+                                                    ctypes.POINTER(ctypes.c_ulong)]
     pid = ctypes.c_ulong()
     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-    name = ""
+    path = ""
     handle = kernel32.OpenProcess(0x1000, False, pid.value)   # PROCESS_QUERY_LIMITED_INFORMATION
     if handle:
         size = ctypes.c_ulong(1024)
         buf = ctypes.create_unicode_buffer(1024)
         if kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
-            name = os.path.basename(buf.value)
+            path = buf.value
         kernel32.CloseHandle(handle)
-    return title.value, name
+    return path
+
+
+def active_exe() -> str:
+    """Полный путь программы окна впереди (для её значка)."""
+    if sys.platform != "win32":
+        return ""
+    hwnd = _foreground()
+    return _exe_of(hwnd) if hwnd else ""
 
 
 def active_window_rect() -> tuple[int, int, int, int] | None:
@@ -276,13 +298,63 @@ def perch_on(rect, ratio: float, size: int, area: QRect) -> tuple[int, int] | No
     return int(x), int(top - size * 0.93)     # лапки как раз на кромке окна
 
 
+def accessories_dir() -> Path:
+    """Папка своих вещей: KAI_ACCESSORIES или %LOCALAPPDATA%/KaiPet/accessories (~/.kai-pet/accessories)."""
+    if os.environ.get("KAI_ACCESSORIES"):
+        return Path(os.environ["KAI_ACCESSORIES"])
+    base = os.environ.get("LOCALAPPDATA")
+    return Path(base) / "KaiPet" / "accessories" if base else Path.home() / ".kai-pet" / "accessories"
+
+
+def custom_accessories(folder: Path | None = None) -> dict[str, tuple[str, str, Path]]:
+    """Свои вещи: <место>-<название>.svg (head-bow.svg, neck-tie.svg, face-mask.svg) → {id: (название, место, файл)}.
+
+    Без места в имени — на голову. Рисовать в координатах Кая 256×256 (голова — около 128,120).
+    """
+    folder = folder or accessories_dir()
+    try:
+        files = sorted(folder.glob("*.svg"))
+    except OSError:
+        return {}
+    found = {}
+    for f in files:
+        slot, _, name = f.stem.partition("-")
+        if slot not in SLOTS or not name:
+            slot, name = "head", f.stem
+        slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+        if not slug or slug != name.lower():           # кириллица, пробелы — плюс короткий хэш, чтобы имена не совпали
+            slug = (slug + "_" if slug else "") + hashlib.md5(name.encode()).hexdigest()[:6]
+        found["my_" + slug] = (name, slot, f)
+    return found
+
+
+def all_accessories() -> dict[str, tuple[str, str]]:
+    return {**ACCESSORIES, **{k: (ru, slot) for k, (ru, slot, _f) in custom_accessories().items()}}
+
+
+def shaking(trail, now: float, window: float = 1.0, turns_needed: int = 4, travel: int = 600) -> bool:
+    """Мышкой быстро трясут из стороны в сторону: ≥4 разворота и ≥600 px пути за секунду. trail — [(t, x)]."""
+    pts = [(t, x) for t, x in trail if now - t <= window]
+    turns, dist, last = 0, 0, 0
+    for (_t0, x0), (_t1, x1) in zip(pts, pts[1:]):
+        dx = x1 - x0
+        if abs(dx) < 3:
+            continue
+        way = 1 if dx > 0 else -1
+        dist += abs(dx)
+        turns += bool(last and way != last)
+        last = way
+    return turns >= turns_needed and dist >= travel
+
+
 def normalize_look(look) -> dict:
     """Только известные вид, цвет и вещи; на каждом месте (голова, шея, лицо) — одна вещь, последняя побеждает."""
     look = look if isinstance(look, dict) else {}
     slots: dict[str, str] = {}
+    known = all_accessories()
     for item in look.get("acc") or []:
-        if item in ACCESSORIES:
-            slots[ACCESSORIES[item][1]] = item
+        if item in known:
+            slots[known[item][1]] = item
     return {"kind": look.get("kind") if look.get("kind") in KINDS else "cat",
             "color": look.get("color") if look.get("color") in COLORS else "gray",
             "acc": sorted(slots.values())}
@@ -376,6 +448,10 @@ class Pet(QWidget):
         self.sounds_on = bool(state.get("sounds", self.cfg.sounds))
         self.dance_on = bool(state.get("dance", self.cfg.dance_to_music))
         self.seasonal = bool(state.get("seasonal", self.cfg.seasonal))
+        self.chase_on = bool(state.get("chase", True))
+        self._trail: collections.deque = collections.deque(maxlen=30)   # где был курсор: (время, x)
+        self._last_chase = 0.0
+        self._run: QPropertyAnimation | None = None
         self.friend = int(state.get("friend", 0) or 0)
         self.last_hint = time.monotonic()
         self.heard = ""
@@ -427,6 +503,8 @@ class Pet(QWidget):
             self._export.kill()
             self._export.waitForFinished(2000)
             self._export = None
+        if self._run is not None:
+            self._run.stop()
         _meter[0] = None                       # отпустить индикатор громкости, пока COM ещё работает
         self.bubble.deleteLater()
         self.deleteLater()
@@ -505,6 +583,19 @@ class Pet(QWidget):
         env = QProcessEnvironment.systemEnvironment()
         env.insert("KAI_LOOK", json.dumps(look))
         env.insert("KAI_OUT", str(tmp))
+        mine = custom_accessories()
+        custom = {}
+        for item in look["acc"]:
+            if item in mine:
+                _ru, slot, file = mine[item]
+                try:
+                    if file.stat().st_size <= CUSTOM_MAX_BYTES:
+                        custom[item] = {"slot": slot, "svg": file.read_text(encoding="utf-8", errors="replace")}
+                except OSError as e:
+                    log.warning("Своя вещь %s не прочитана: %s", file, e)
+        if custom:
+            # shortcut: готовый образ кэшируется по имени вещи; поправили SVG — переименуйте файл
+            env.insert("KAI_CUSTOM", json.dumps(custom))
         proc = QProcess(self)
         proc.setProcessEnvironment(env)
         proc.setProgram(node)
@@ -761,6 +852,7 @@ class Pet(QWidget):
         return self.cache[key]
 
     def _tick(self) -> None:
+        self._maybe_chase()
         name = self.current()
         if name != self.shown:
             self.shown, self.frame = name, 0
@@ -777,6 +869,42 @@ class Pet(QWidget):
         self.frame += 1
         self._timer.setInterval(1000 // fps)
         self.update()
+
+    def _maybe_chase(self) -> None:
+        """Мышкой трясут рядом с Каем — он охотится: подбегает к курсору и прыгает."""
+        if not self.chase_on or self.once or self.loop != "idle" or self._press:
+            return
+        now, c = time.monotonic(), self._cursor()
+        self._trail.append((now, c.x()))
+        center = self.geometry().center()
+        if (now - self._last_chase < CHASE_COOLDOWN_S
+                or abs(c.x() - center.x()) + abs(c.y() - center.y()) > CHASE_RADIUS or not shaking(self._trail, now)):
+            return
+        self._last_chase = now
+        self._trail.clear()
+        self.hunt(c.x() - center.x())
+
+    def hunt(self, dx: int) -> None:
+        """Подбежать к курсору (если сидит «где оставлю») и прыгнуть на него."""
+        self._touch()
+        self._sound("meow")
+        step = max(-CHASE_STEP, min(CHASE_STEP, dx))
+        area = self._area()
+        x = max(area.left(), min(area.right() - self.size_px, self.x() + step))
+        if self.dock != "free" or abs(x - self.x()) < 30:
+            self.play("jump", 2)
+            return
+        self.play("runRight" if step > 0 else "runLeft")
+        self._run = QPropertyAnimation(self, b"pos", self)
+        self._run.setDuration(700)
+        self._run.setEndValue(QPoint(x, self.y()))
+        self._run.finished.connect(self._caught)
+        self._run.start()
+
+    def _caught(self) -> None:
+        self._run = None
+        self._save_place()
+        self.play("jump")
 
     def paintEvent(self, _event):
         if self._pix is None:
@@ -911,11 +1039,13 @@ class Pet(QWidget):
                 action.triggered.connect(lambda _c=False, k=key, n=name: self.change_look({k: n}))
         things = dress.addMenu("Аксессуары")
         worn = set(self.look["acc"])
-        for name, (ru, _slot) in ACCESSORIES.items():
+        for name, (ru, _slot) in all_accessories().items():
             action = things.addAction(ru)
             action.setCheckable(True)
             action.setChecked(name in worn)
             action.triggered.connect(lambda on, n=name: self.change_look({"wear": n} if on else {"remove": n}))
+        things.addSeparator()
+        things.addAction("Свои вещи (папка)…").triggered.connect(lambda _c=False: self.open_accessories())
         dress.addSeparator()
         dress.addAction("Удиви меня").triggered.connect(lambda _c=False: self.change_look({"random": True}))
         dress.addAction("Как было").triggered.connect(lambda _c=False: self.change_look({"reset": True}))
@@ -936,10 +1066,18 @@ class Pet(QWidget):
         self._toggle(settings, "Звуки", self.sounds_on, lambda on: self._set_flag("sounds", "sounds_on", on))
         self._toggle(settings, "Танцевать под музыку", self.dance_on, lambda on: self._set_flag("dance", "dance_on", on))
         self._toggle(settings, "Сезонные образы", self.seasonal, lambda on: self._set_flag("seasonal", "seasonal", on))
+        self._toggle(settings, "Охотиться за мышкой", self.chase_on, lambda on: self._set_flag("chase", "chase_on", on))
         menu.addSeparator()
         menu.addAction(self.friendship_text()).setEnabled(False)
         menu.addAction("Выход").triggered.connect(lambda _c=False: self.quit_requested.emit())
         self._show_menu(menu, e.globalPos())
+
+    def open_accessories(self) -> None:
+        """Открыть папку своих вещей; новые SVG появляются в «Аксессуарах» без перезапуска."""
+        folder = accessories_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+        self.bubble.say("Положи сюда SVG: head-бант.svg, neck-галстук.svg или face-маска.svg", 10000)
 
     def _show_menu(self, menu: QMenu, pos: QPoint) -> None:
         menu.exec(pos)
@@ -956,6 +1094,9 @@ class Pet(QWidget):
     # --- мышь: клик — помахать, перетаскивание — переставить, поглаживание — мурлыкать ---
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
+            if self._run is not None:              # схватили на бегу — бег не тянет Кая из рук
+                self._run.stop()
+                self._run = None
             self._press = [e.globalPosition().toPoint(), self.pos(), False]
 
     def mouseMoveEvent(self, e):

@@ -28,6 +28,8 @@ const KINDS = { cat: 'Котик', fox: 'Лисёнок', bunny: 'Зайка', b
 // slot: на голове одна вещь, очки и шарф — к чему угодно
 const ACCESSORIES = { scarf: { ru: 'Шарфик', slot: 'neck' }, hat: { ru: 'Шапочка', slot: 'head' },
   glasses: { ru: 'Очки', slot: 'face' }, headphones: { ru: 'Наушники', slot: 'head' }, crown: { ru: 'Корона', slot: 'head' } };
+// Свои вещи из папки accessories питомца: { id: { slot: 'head' | 'neck' | 'face', svg: '<svg viewBox="0 0 256 256">…' } }
+const CUSTOM = {};
 const LOOK = { kind: 'cat', color: 'gray', acc: [] };   // текущий образ; svg(..., { look }) может переопределить
 const lookId = l => {
   const x = { ...LOOK, ...l };
@@ -457,6 +459,8 @@ function svg(pose, opt = {}) {
     `<path d="M70,150 C66,96 98,78 128,78 C158,78 190,96 186,150" style="fill:none;stroke:${ACC_COLOR.phones};stroke-width:5;stroke-linecap:round"/>` +
     `<g style="fill:${ACC_COLOR.cups};stroke:${ink};stroke-width:4"><ellipse cx="66" cy="156" rx="11" ry="18"/><ellipse cx="190" cy="156" rx="11" ry="18"/></g></g>`;
   const hat = head ? `<g id="acc-head" transform="${tilt}">${head}</g>` : '';
+  const mine = [...wear].filter(a => CUSTOM[a]).map(a => `<g id="acc-${a}"${CUSTOM[a].slot === 'neck' ? '' : ` transform="${tilt}"`}>` +
+    String(CUSTOM[a].svg).replace(/<\?xml[^>]*>/, '') + '</g>').join('');
   const treat = p.treat > 0.05 ? `<g id="prop-treat" transform="translate(128 187) scale(${f(p.treat)})">` +
     `<circle r="11" style="fill:${acc};stroke:${ink};stroke-width:3"/>` +
     `<g style="fill:${ink}"><circle cx="-4" cy="-3" r="1.7"/><circle cx="4" cy="-1" r="1.7"/><circle cx="-1" cy="5" r="1.7"/></g></g>` : '';
@@ -465,7 +469,7 @@ function svg(pose, opt = {}) {
   const T = `${flip}translate(0 ${f(p.y)}) rotate(${f(p.rot)} 128 228) translate(128 228) scale(${f(p.sx)} ${f(p.sy)}) translate(-128 -228)`;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}" width="${size}" height="${size}">` +
     `<defs><clipPath id="${id}-ear"><path d="${E.out}"/></clipPath></defs>` +
-    `<g id="kai" transform="${T}">${tail}<g id="ears" transform="${tilt}">${ear(-1)}${ear(1)}</g>${body}${spark}${scarf}${feet}${arm(-1)}${arm(1)}${heart}${face}${treat}${hat}</g></svg>`;
+    `<g id="kai" transform="${T}">${tail}<g id="ears" transform="${tilt}">${ear(-1)}${ear(1)}</g>${body}${spark}${scarf}${feet}${arm(-1)}${arm(1)}${heart}${face}${treat}${hat}${mine}</g></svg>`;
 }
 
 // ── Публичный API
@@ -505,6 +509,6 @@ function mount(el, opts = {}) {
   };
 }
 
-const Kai = { PALETTE, PALETTES, COLOR_NAMES, KINDS, ACCESSORIES, LOOK, lookId, SIZE, BASE, STATES, ANIMS, LOOKS, expand, blend, pose, svg, frame, frames, mount };
+const Kai = { PALETTE, PALETTES, COLOR_NAMES, KINDS, ACCESSORIES, CUSTOM, LOOK, lookId, SIZE, BASE, STATES, ANIMS, LOOKS, expand, blend, pose, svg, frame, frames, mount };
 if (typeof module !== 'undefined' && module.exports) module.exports = Kai; else root.Kai = Kai;
 })(this);

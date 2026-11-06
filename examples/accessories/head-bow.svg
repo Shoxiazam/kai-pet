@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Бантик на ухе: координаты Кая 256×256, голова около (128, 120). Скопируйте в папку «Свои вещи». -->
+  <g style="fill:#E05A47;stroke:#3D3929;stroke-width:4;stroke-linejoin:round">
+    <path d="M150,98 L132,84 L134,112 Z"/>
+    <path d="M150,98 L168,84 L166,112 Z"/>
+    <circle cx="150" cy="98" r="6"/>
+  </g>
+</svg>
