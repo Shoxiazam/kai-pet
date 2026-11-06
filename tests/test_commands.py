@@ -28,7 +28,7 @@ def test_greetings_and_goodbyes(text, anim, say):
     ("покажи лайк", "like"), ("покажи класс", "like"), ("покажи большой палец", "like"),
     ("станцуй", "dance"), ("покажи танец", "dance"), ("прыгни", "jump"), ("обними меня", "hug"),
     ("поклонись", "bow"), ("похлопай", "clap"), ("помаши", "wave"), ("подмигни", "playful"),
-    ("удивись", "surprised"), ("обрадуйся", "excited"), ("поворчи", "grumpy"), ("иди спать", "sleepy"),
+    ("удивись", "surprised"), ("обрадуйся", "excited"), ("поворчи", "grumpy"), ("иди спать", "bed"),
     ("похвали меня", "proud"), ("задумайся", "confused"), ("успокойся", "calm"),
 ])
 def test_gestures_and_emotions(text, anim):

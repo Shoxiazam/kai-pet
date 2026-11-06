@@ -38,10 +38,12 @@ def test_background_mood_rules():
 
 def test_look_at_directions():
     assert look_at(0, 0, 240, 75) == "curious"
-    assert look_at(-150, 10, 240, 75) == "look_left"
-    assert look_at(150, -10, 240, 75) == "look_right"
-    assert look_at(10, -150, 240, 75) == "look_up"
-    assert look_at(10, 150, 240, 75) == "look_down"
+    assert look_at(-150, 10, 240, 75) == "look_a08"         # влево
+    assert look_at(150, -10, 240, 75) == "look_a00"         # вправо
+    assert look_at(10, -150, 240, 75) == "look_a12"         # вверх
+    assert look_at(10, 150, 240, 75) == "look_a04"          # вниз
+    assert look_at(120, 120, 240, 75) == "look_a02"         # по диагонали — не только 4 стороны
+    assert look_at(-80, -40, 240, 75) == "look_n09"         # курсор рядом — смотрит чуть-чуть
     assert look_at(500, 0, 240, 75) is None
 
 
@@ -150,12 +152,13 @@ def test_program_in_front_sets_mood(pet, monkeypatch):
 def test_cursor_and_sleep(pet, monkeypatch):
     c = pet.geometry().center()
     monkeypatch.setattr(pet, "_cursor", lambda: QPoint(c.x() - 150, c.y()))
-    assert pet.current() == "look_left"
+    assert pet.current() == "look_a08"
     pet._tick()
+    assert pet._pix is not None and pet.shown == "look_a08"     # кадр взгляда нашёлся
     monkeypatch.setattr(pet, "_cursor", lambda: QPoint(-5000, -5000))
     pet.last_event -= 3600
     monkeypatch.setattr(pet_module, "input_idle_s", lambda: 3600.0)
-    assert pet.current() == "sleepy"
+    assert pet.current() == "bed"                                # спит в кроватке
 
 
 def test_hints_break_and_welcome(pet, monkeypatch):

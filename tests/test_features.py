@@ -78,14 +78,15 @@ def test_rotate_drop_and_dock_are_remembered(pet):
 
 # --- музыка ---
 def test_dances_only_to_steady_sound(pet, monkeypatch):
-    levels = iter([0.3] * 3 + [0.0] * 5 + [0.2] * 8)
+    n = pet_module.MUSIC_SAMPLES
+    levels = iter([0.3] * 10 + [0.0] * (n - 10) + [0.2] * n)
     monkeypatch.setattr(pet_module, "audio_peak", lambda: next(levels))
-    for _ in range(8):
+    for _ in range(n):
         pet._listen()
     assert not pet.music                                  # короткий «дзынь» — не музыка
-    for _ in range(8):
+    for _ in range(n):
         pet._listen()
-    assert pet.music and pet.current() == "groove"
+    assert pet.music and pet.current() in pet_module.DANCES
     pet.dance_on = False
     pet._listen()
     assert not pet.music                                  # выключили в меню — не танцует
@@ -299,3 +300,159 @@ def test_example_accessory_renders():
     import xml.etree.ElementTree as ET
     root = ET.parse(Path(__file__).resolve().parent.parent / "examples" / "accessories" / "head-bow.svg").getroot()
     assert root.get("viewBox") == "0 0 256 256"
+
+
+
+# --- разные танцы ---
+def _beat(bpm, seconds=10, hz=10, base=0.2, kick=0.4):
+    period = 60 * hz / bpm
+    return [base + (kick if (i % period) < 1 else 0.0) for i in range(seconds * hz)]
+
+
+def test_music_style_by_title_and_sound():
+    steady = [0.25] * 100               # ровный тихий звук
+    assert pet_module.music_style(steady, "Lofi beats to study - YouTube") == "sway"
+    assert pet_module.music_style(steady, "Metallica — Enter Sandman") == "headbang"
+    assert pet_module.music_style(steady, "Phonk mix 2026") == "bounce"
+    assert pet_module.music_style(steady, "Урок математики") == "sway"       # «урок» — не рок
+    assert pet_module.music_style(steady) == "sway"                     # спокойный звук
+    assert pet_module.music_style(_beat(150)) == "bounce"               # быстрый бит
+    assert pet_module.tempo_bpm(_beat(120)) == 120
+    assert pet_module.music_style([0.2] * 10) == "groove"                # мало данных
+
+
+def test_dance_follows_style(pet, monkeypatch):
+    monkeypatch.setattr(pet_module, "audio_peak", lambda: 0.3)
+    pet._title = "Chill piano"
+    for _ in range(pet_module.MUSIC_SAMPLES):
+        pet._listen()
+    assert pet.music and pet.dance_style == "sway" and pet.current() == "sway"
+    pet._title = "Rock radio"
+    pet._listen()
+    assert pet.dance_style == "sway"                       # не дёргается: пересматривает раз в 15 с
+    pet._style_at -= pet_module.STYLE_EVERY_S + 1
+    pet._listen()
+    assert pet.current() == "headbang"
+
+
+# --- табличка ---
+def test_sign_text_shown_and_remembered(pet, monkeypatch):
+    pet.set_sign("  Не   беспокоить!  ")
+    assert pet.sign_text == "Не беспокоить!" and load_state()["sign"] == "Не беспокоить!"
+    assert pet.current() == "sign"
+    pet._tick()
+    img = pet.grab().toImage()                                     # текст рисуется поверх кадра
+    k = pet.size_px / 256
+    x, y, w, h = (int(v * k) for v in pet_module.SIGN_RECT)
+    dark = sum(img.pixelColor(i, j).lightness() < 90 for i in range(x, x + w) for j in range(y, y + h))
+    assert dark > 20
+    pet.set_sign("x" * 200)
+    assert len(pet.sign_text) == pet_module.SIGN_MAX
+    pet.grab()                                                     # длинный текст не ломает отрисовку
+    pet.set_sign("")
+    assert pet.current() != "sign"
+
+
+def test_sign_by_words():
+    from kai_pet import commands
+    act = commands.parse("Покажи табличку: Ушёл на обед")
+    assert act.sign == "Ушёл на обед"
+    assert commands.parse("напиши на табличке Привет, Олег!").sign == "Привет, Олег!"
+    assert commands.parse("убери табличку").sign == ""
+    assert commands.parse("напиши Олегу привет") is None                 # сообщение — не табличка
+    assert commands.parse("покажи сердечко").sign is None
+
+
+# --- кровать и новые вещи ---
+def test_new_frames_exist():
+    for anim in ("sway", "bounce", "headbang", "bed", "sign"):
+        assert (pet_module.ASSETS / "frames" / anim).is_dir(), anim
+    assert len(list((pet_module.ASSETS / "look").glob("a??.png"))) == 16
+    assert len(list((pet_module.ASSETS / "look").glob("n??.png"))) == 16
+
+
+def test_old_outfit_without_new_frames_is_redrawn(pet, monkeypatch, tmp_path):
+    monkeypatch.setattr(pet, "looks_root", lambda: tmp_path / "looks")      # не трогаем настоящий кэш образов
+    look = pet_module.normalize_look({"acc": ["scarf"]})
+    old = pet.look_dir(look)
+    (old / "frames" / "idle").mkdir(parents=True)                        # образ из прошлой версии
+    started = []
+    monkeypatch.setattr(pet, "_start_export", lambda lk, announce: started.append(lk))
+    pet._wear(look, announce=False)
+    assert started == [look]
+
+
+# --- погода ---
+def test_weather_items_rules():
+    assert pet_module.weather_items(-5, 3) == ["hat", "scarf"]
+    assert pet_module.weather_items(8, 61) == ["umbrella", "scarf"]
+    assert pet_module.weather_items(15, 2) == []
+    assert pet_module.weather_items(29, 0) == ["sunglasses"]
+    assert pet_module.weather_items(2, 73) == ["hat", "scarf"]
+    assert pet_module.weather_words(61) == "дождь" and pet_module.weather_words(0) == "ясно"
+
+
+def test_weather_beats_calendar_in_effective_look():
+    winter = Winter.today()
+    plain = {"kind": "cat", "color": "gray", "acc": []}
+    assert effective_look(plain, winter)["acc"] == ["hat", "scarf"]               # без погоды — по календарю
+    assert effective_look(plain, winter, weather=["sunglasses"])["acc"] == ["sunglasses"]   # тёплая зима
+    assert effective_look(plain, winter, seasonal=False, weather=["umbrella"])["acc"] == ["umbrella"]
+    mine = {"kind": "cat", "color": "gray", "acc": ["glasses"]}
+    assert effective_look(mine, winter, weather=["sunglasses", "umbrella"])["acc"] == ["glasses", "umbrella"]
+
+
+def test_weather_fetch_dresses_kai(pet, monkeypatch, played):
+    calls = []
+
+    def fake(city, geo):
+        calls.append((city, geo))
+        return {"city": city, "name": "Осло", "lat": 59.9, "lon": 10.7}, 7.0, 63
+    monkeypatch.setattr(pet_module, "fetch_weather", fake)
+    worn = []
+    monkeypatch.setattr(pet, "_wear", lambda look, announce, greet=False: worn.append(look))
+    monkeypatch.setattr(pet_module.threading, "Thread",
+                        lambda target, args, daemon: type("T", (), {"start": lambda self: target(*args)})())
+    pet.check_weather()
+    assert calls == []                                     # город не указан — в сеть не ходит
+    pet.city = "Осло"
+    pet.check_weather(announce=True)
+    assert pet.weather == (7.0, 63) and calls == [("Осло", None)]
+    assert worn[-1]["acc"] == ["scarf", "umbrella"]
+    assert "Осло: +7°, дождь" in pet.bubble.text.text()
+    pet.check_weather()
+    assert calls[-1][1]["lat"] == 59.9                     # координаты запомнены — геокодер второй раз не нужен
+    pet.change_look({"remove": "umbrella"})                # сняли зонтик — сегодня без погодных вещей
+    assert load_state()["weather_off"] == dt.date.today().isoformat()
+
+
+def test_weather_error_is_quiet(pet, monkeypatch):
+    def boom(city, geo):
+        raise OSError("нет сети")
+    monkeypatch.setattr(pet_module, "fetch_weather", boom)
+    monkeypatch.setattr(pet_module.threading, "Thread",
+                        lambda target, args, daemon: type("T", (), {"start": lambda self: target(*args)})())
+    pet.city = "Нигде"
+    pet.check_weather()
+    assert pet.weather is None and not pet.bubble.isVisible()
+    pet.check_weather(announce=True)
+    assert "нет сети" in pet.bubble.text.text()
+
+
+def test_menu_has_sign_and_weather(pet, monkeypatch):
+    titles = []
+
+    def walk(menu):
+        for a in menu.actions():
+            titles.append(a.text())
+            if a.menu():
+                walk(a.menu())
+    monkeypatch.setattr(pet, "_show_menu", lambda menu, pos: walk(menu))
+
+    class Ev:
+        def globalPos(self):
+            return QPoint(0, 0)
+    pet.set_sign("Привет")
+    pet.contextMenuEvent(Ev())
+    for t in ("Табличка…", "Убрать табличку", "Погода", "Указать город…", "Одеваться по погоде", "Зонтик", "Тёмные очки"):
+        assert t in titles, t

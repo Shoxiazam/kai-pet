@@ -25,12 +25,15 @@ import random
 import re
 import shutil
 import sys
+import threading
 import time
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
-from PySide6.QtCore import (QCoreApplication, QEvent, QPoint, QProcess, QProcessEnvironment, QPropertyAnimation, QRect,
+from PySide6.QtCore import (QCoreApplication, QEvent, QPoint, QProcess, QProcessEnvironment, QPropertyAnimation, QRect, QRectF,
                             Qt, QTimer, QUrl, Signal)
-from PySide6.QtGui import QAction, QCursor, QDesktopServices, QGuiApplication, QPainter, QPixmap
+from PySide6.QtGui import QAction, QColor, QCursor, QDesktopServices, QFont, QGuiApplication, QPainter, QPixmap
 from PySide6.QtWidgets import QInputDialog, QMenu, QWidget
 
 from . import commands, sounds
@@ -49,7 +52,20 @@ CACHE_MAX = 10          # наборов кадров в памяти; одна 
 TIRED_EVERY_S, TIRED_FOR_S = 15 * 60, 20   # после долгой работы: раз в 15 минут устаёт на 20 секунд
 FLASH_S = 8             # эмоция по смыслу держится после кивка
 MUSIC_LEVEL = 0.02      # громкость выше — звучит что-то
-MUSIC_SAMPLES, MUSIC_NEED = 8, 6           # 8 замеров по 0,4 с: из них 6 громких — это музыка, а не «дзынь»
+EAR_MS = 100           # громкость — 10 раз в секунду: хватает, чтобы услышать темп
+MUSIC_SAMPLES, MUSIC_NEED = 32, 24         # 32 замера (3,2 с): из них 24 громких — это музыка, а не «дзынь»
+STYLE_WINDOW = 100      # 10 с громкости — по ним выбирается танец
+STYLE_EVERY_S = 15      # танец пересматривается не чаще, чтобы не дёргался
+DANCES = {"sway": "покачиваюсь", "groove": "киваю", "bounce": "прыгаю", "headbang": "качаю головой"}
+_ROCK = re.compile(r"\b(?:rock|metal\w*|punk|grunge|рок|метал\w*|панк)\b")
+_CALM = re.compile(r"lo-?fi|chill|piano|jazz|ambient|sleep|relax|acoustic|classical|колыбел|спокойн|медитац|пианино|джаз")
+_FAST = re.compile(r"\b(?:edm|techno|house|dance|phonk|drum|dnb|trap|club|remix|hardstyle)\b|танцев|клубн|фонк")
+SIGN_RECT = (44, 194, 168, 42)   # где писать на табличке: x, y, ширина, высота в кадре 256 (character/kai.js, SIGN)
+SIGN_MAX = 60
+NEWEST_ANIM = "sign"    # в образе нет этих кадров — нарисован старой версией, перерисовать
+WEATHER_EVERY_MS = 30 * 60 * 1000
+RAIN = set(range(51, 68)) | {80, 81, 82, 95, 96, 99}     # коды погоды WMO (Open-Meteo)
+SNOW = set(range(71, 78)) | {85, 86}
 PET_DISTANCE, PET_GAP_S = 450, 0.8         # столько провести мышкой по Каю без пауз — погладили
 FRIEND_LEVELS = (5, 15, 35, 70, 120)       # очки дружбы до каждого следующего сердечка
 SNAP_PX = 48            # ближе к краю экрана — Кай прилипает и поворачивается лапками к этому краю
@@ -61,9 +77,10 @@ KINDS = {"cat": "Котик", "fox": "Лисёнок", "bunny": "Зайка", "b
 COLORS = {"gray": "Серый", "ginger": "Рыжий", "graphite": "Графитовый", "terracotta": "Терракотовый",
           "sky": "Голубой", "mint": "Мятный", "lilac": "Сиреневый", "rose": "Розовый"}
 ACCESSORIES = {"scarf": ("Шарфик", "neck"), "hat": ("Шапочка", "head"), "glasses": ("Очки", "face"),
-               "headphones": ("Наушники", "head"), "crown": ("Корона", "head")}
+               "headphones": ("Наушники", "head"), "crown": ("Корона", "head"),
+               "sunglasses": ("Тёмные очки", "face"), "umbrella": ("Зонтик", "hand")}
 DEFAULT_LOOK = {"kind": "cat", "color": "gray", "acc": []}
-SLOTS = ("head", "neck", "face")
+SLOTS = ("head", "neck", "face", "hand")
 CUSTOM_MAX_BYTES = 200_000   # своя вещь — картинка, а не фотоальбом
 CHASE_COOLDOWN_S = 6    # охотится за курсором не чаще
 CHASE_RADIUS = 500      # трясти мышкой надо рядом с Каем
@@ -238,14 +255,96 @@ def background_mood(app: str | None, hour: int, active_s: float, tired_after_s: 
 
 
 def look_at(dx: float, dy: float, radius: float, half: float) -> str | None:
-    """Курсор относительно центра Кая → куда смотреть."""
+    """Курсор относительно центра Кая → куда смотреть: 16 направлений, близко (n) или далеко (a)."""
     if abs(dx) <= half and abs(dy) <= half:
         return "curious"                      # курсор на самом Кае
-    if dx * dx + dy * dy > radius * radius:
+    dist = math.hypot(dx, dy)
+    if dist > radius:
         return None
-    if abs(dx) >= abs(dy):
-        return "look_left" if dx < 0 else "look_right"
-    return "look_up" if dy < 0 else "look_down"
+    i = round(math.atan2(dy, dx) / (math.tau / 16)) % 16   # 0 — вправо, по часовой (y вниз)
+    return f"look_{'n' if dist < radius * 0.4 else 'a'}{i:02d}"
+
+
+def tempo_bpm(levels, hz: int = 10) -> float | None:
+    """Темп по громкости (замеры hz раз в секунду): самый похожий на себя сдвиг, 60..200 ударов в минуту."""
+    n = len(levels)
+    if n < 40:
+        return None
+    mean = sum(levels) / n
+    x = [v - mean for v in levels]
+    var = sum(v * v for v in x)
+    if var <= 1e-9:
+        return None
+    best, lag_best = 0.1, None                 # слабее 0,1 — ритма не слышно
+    for lag in range(3, 11):                   # 0,3..1,0 с между ударами
+        r = sum(x[i] * x[i + lag] for i in range(n - lag)) / var
+        if r > best:
+            best, lag_best = r, lag
+    return 60 * hz / lag_best if lag_best else None
+
+
+def music_style(levels, title: str = "") -> str:
+    """Какой танец: по названию трека (рок, lofi, phonk…), иначе по темпу и силе звука."""
+    t = title.lower()
+    if _ROCK.search(t):
+        return "headbang"
+    if _CALM.search(t):
+        return "sway"
+    if _FAST.search(t):
+        return "bounce"
+    if len(levels) < 40:
+        return "groove"
+    mean = sum(levels) / len(levels)
+    if mean <= 0:
+        return "groove"
+    cv = (sum((v - mean) ** 2 for v in levels) / len(levels)) ** 0.5 / mean   # насколько звук «скачет»
+    bpm = tempo_bpm(levels)
+    if (bpm and bpm >= 125) or cv >= 0.6:
+        return "bounce"
+    if cv <= 0.25 or (bpm and bpm <= 80 and cv < 0.4):
+        return "sway"
+    return "groove"
+
+
+def weather_items(temp: float, code: int) -> list[str]:
+    """Что надеть: холодно или снег — шапка и шарф, прохладно — шарф, дождь — зонтик, жара и солнце — тёмные очки."""
+    items = []
+    if code in RAIN:
+        items.append("umbrella")
+    if temp <= 3 or code in SNOW:
+        items += ["hat", "scarf"]
+    elif temp <= 12:
+        items.append("scarf")
+    if temp >= 24 and code <= 2:
+        items.append("sunglasses")
+    return items
+
+
+def weather_words(code: int) -> str:
+    if code in SNOW:
+        return "снег"
+    if code >= 95:
+        return "гроза"
+    if code in RAIN:
+        return "дождь"
+    if code in (45, 48):
+        return "туман"
+    return "ясно" if code <= 1 else "облачно"
+
+
+def fetch_weather(city: str, geo: dict | None) -> tuple[dict, float, int]:
+    """Open-Meteo без ключа: город → координаты (запоминаются), затем погода сейчас. Сетевые ошибки — наружу."""
+    if not geo or geo.get("city") != city:
+        q = urllib.parse.urlencode({"name": city, "count": 1, "language": "ru"})
+        with urllib.request.urlopen(f"https://geocoding-api.open-meteo.com/v1/search?{q}", timeout=10) as r:
+            found = (json.load(r).get("results") or [None])[0]
+        if not found:
+            raise LookupError(f"город «{city}» не найден")
+        geo = {"city": city, "name": found.get("name", city), "lat": found["latitude"], "lon": found["longitude"]}
+    q = urllib.parse.urlencode({"latitude": geo["lat"], "longitude": geo["lon"], "current": "temperature_2m,weather_code"})
+    with urllib.request.urlopen(f"https://api.open-meteo.com/v1/forecast?{q}", timeout=10) as r:
+        now = json.load(r)["current"]
+    return geo, float(now["temperature_2m"]), int(now["weather_code"])
 
 
 def meaning_mood(heard: str, answer: str) -> str | None:
@@ -392,15 +491,18 @@ def season_key(day: datetime.date) -> str:
 
 
 def effective_look(chosen: dict, day: datetime.date, birthday: str = "", seasonal: bool = True,
-                   winter_off: str = "") -> dict:
-    """Образ с сезонными вещами: зимой шапочка и шарф, в день рождения корона — только на свободные места."""
+                   winter_off: str = "", weather: list[str] | None = None) -> dict:
+    """Образ с вещами по поводу — только на свободные места: в день рождения корона, по погоде (если известна)
+    зонтик, шарф, шапка или тёмные очки, иначе по календарю — зимой шапочка и шарф."""
     look = normalize_look(chosen)
-    if not seasonal:
+    if not seasonal and weather is None:
         return look
     extra = []
-    if birthday and day.strftime("%m-%d") == birthday:
+    if seasonal and birthday and day.strftime("%m-%d") == birthday:
         extra.append("crown")
-    if season_key(day) and winter_off != season_key(day):
+    if weather is not None:
+        extra += weather                       # погода знает лучше календаря
+    elif season_key(day) and winter_off != season_key(day):
         extra += ["hat", "scarf"]
     taken = {ACCESSORIES[a][1] for a in look["acc"]}
     for item in extra:
@@ -417,6 +519,7 @@ def friend_level(points: int) -> int:
 class Pet(QWidget):
     clicked = Signal()
     quit_requested = Signal()
+    _weather_got = Signal(object)              # ответ погоды из фонового потока
 
     def __init__(self, cfg: Config | None = None, assets: Path = ASSETS):
         super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
@@ -449,6 +552,13 @@ class Pet(QWidget):
         self.dance_on = bool(state.get("dance", self.cfg.dance_to_music))
         self.seasonal = bool(state.get("seasonal", self.cfg.seasonal))
         self.chase_on = bool(state.get("chase", True))
+        self._levels: collections.deque = collections.deque(maxlen=STYLE_WINDOW)   # громкость для выбора танца
+        self.dance_style, self._style_at, self._title = "groove", 0.0, ""
+        self.sign_text = " ".join(str(state.get("sign", "")).split())[:SIGN_MAX]
+        self.weather_on = bool(state.get("weather", True))
+        self.city = str(state.get("city", ""))
+        self.weather: tuple[float, int] | None = None                         # (температура, код) — когда узнали
+        self._weather_announce = False
         self._trail: collections.deque = collections.deque(maxlen=30)   # где был курсор: (время, x)
         self._last_chase = 0.0
         self._run: QPropertyAnimation | None = None
@@ -486,7 +596,11 @@ class Pet(QWidget):
         self._perch.start(400)
         self._ear = QTimer(self)
         self._ear.timeout.connect(self._listen)
-        self._ear.start(400)
+        self._ear.start(EAR_MS)
+        self._weather_got.connect(self._weather_done)
+        self._weather_timer = QTimer(self)
+        self._weather_timer.timeout.connect(self.check_weather)
+        self._weather_timer.start(3000)          # первый раз — вскоре после запуска, дальше раз в 30 минут
         wanted = self._effective()
         if wanted != self.look:
             QTimer.singleShot(0, lambda: self._wear(wanted, announce=False, greet=True))   # образ из прошлого раза
@@ -496,7 +610,7 @@ class Pet(QWidget):
 
         Иначе Python добирает окна Кая сборщиком мусора уже после закрытия Qt — и процесс падает на выходе.
         """
-        for timer in (self._timer, self._watch, self._perch, self._ear):
+        for timer in (self._timer, self._watch, self._perch, self._ear, self._weather_timer):
             timer.stop()
         if self._export is not None:
             self._export.finished.disconnect()
@@ -518,14 +632,20 @@ class Pet(QWidget):
         return self.base if look_id(look) == look_id(DEFAULT_LOOK) else self.looks_root() / look_id(look)
 
     def _effective(self, chosen: dict | None = None) -> dict:
-        return effective_look(chosen or self.chosen, datetime.date.today(), self.cfg.birthday, self.seasonal,
-                              load_state().get("winter_off", ""))
+        state, today = load_state(), datetime.date.today()
+        wx = None
+        if self.weather_on and self.weather and state.get("weather_off") != today.isoformat():
+            wx = weather_items(*self.weather)
+        return effective_look(chosen or self.chosen, today, self.cfg.birthday, self.seasonal,
+                              state.get("winter_off", ""), wx)
 
     def change_look(self, op: dict) -> None:
         """Команда гардеробу. Снять сезонную вещь — значит не надевать её до конца сезона."""
         removed = op.get("remove")
         seasonal_now = set(self._effective()["acc"]) - set(self.chosen["acc"])
-        if removed and (removed == "all" or removed in seasonal_now) and season_key(datetime.date.today()):
+        if removed and (removed == "all" or removed in seasonal_now) and self.weather_on and self.weather:
+            save_state("weather_off", datetime.date.today().isoformat())   # снял «погодную» вещь — сегодня без них
+        elif removed and (removed == "all" or removed in seasonal_now) and season_key(datetime.date.today()):
             save_state("winter_off", season_key(datetime.date.today()))
         self.set_look(change_look(self.chosen, op))
 
@@ -543,7 +663,7 @@ class Pet(QWidget):
             return
         if greet:
             self._greet_season(look)
-        if (self.look_dir(look) / "frames" / "idle").is_dir():
+        if (self.look_dir(look) / "frames" / NEWEST_ANIM).is_dir():   # без новых кадров — перерисовать
             self._apply_look(look, announce)
         else:
             self._start_export(look, announce)
@@ -690,8 +810,15 @@ class Pet(QWidget):
         if not self.dance_on:
             self.music = False
             return
-        self._peaks.append(audio_peak())
+        level = audio_peak()
+        self._peaks.append(level)
+        self._levels.append(level)
         self.music = sum(p > MUSIC_LEVEL for p in self._peaks) >= MUSIC_NEED
+        if not self.music:
+            self._style_at = 0.0
+        elif time.monotonic() - self._style_at > STYLE_EVERY_S:
+            self._style_at = time.monotonic()
+            self.dance_style = music_style(list(self._levels), self._title)
 
     # --- API: подключение к своему ассистенту ---
     def set_status(self, status: str) -> None:
@@ -739,6 +866,70 @@ class Pet(QWidget):
         elif self._has(name):
             self.flash = (name, time.monotonic() + 3.0 * times)
 
+    # --- табличка ---
+    def set_sign(self, text: str) -> None:
+        """Табличка с вашим текстом; пустой текст — убрать."""
+        self.sign_text = " ".join(str(text).split())[:SIGN_MAX]
+        save_state("sign", self.sign_text)
+        self._touch()
+        self.update()
+
+    def _ask_sign(self) -> None:
+        dlg = QInputDialog()
+        dlg.setWindowTitle("Табличка")
+        dlg.setLabelText(f"Что написать на табличке? (до {SIGN_MAX} знаков, пусто — убрать)")
+        dlg.setTextValue(self.sign_text)
+        dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowStaysOnTopHint)
+        if dlg.exec():
+            self.set_sign(dlg.textValue())
+
+    # --- погода ---
+    def check_weather(self, announce: bool = False) -> None:
+        """Раз в 30 минут — погода в вашем городе (в фоне); Кай одевается по ней."""
+        self._weather_timer.setInterval(WEATHER_EVERY_MS)
+        if not self.weather_on or not self.city:
+            return
+        self._weather_announce = self._weather_announce or announce
+        geo = load_state().get("geo")
+        threading.Thread(target=self._weather_job, args=(self.city, geo), daemon=True).start()
+
+    def _weather_job(self, city: str, geo) -> None:
+        try:
+            self._weather_got.emit({"result": fetch_weather(city, geo if isinstance(geo, dict) else None)})
+        except Exception as e:                 # нет сети, город не нашёлся — одеваемся по календарю
+            self._weather_got.emit({"error": str(e)})
+
+    def _weather_done(self, reply: dict) -> None:
+        announce, self._weather_announce = self._weather_announce, False
+        if "error" in reply:
+            log.info("Погода не получена: %s", reply["error"])
+            if announce:
+                self.bubble.say(f"Не получилось узнать погоду: {reply['error']}", 8000)
+            return
+        geo, temp, code = reply["result"]
+        save_state("geo", geo)
+        before = weather_items(*self.weather) if self.weather else None
+        self.weather = (temp, code)
+        now = weather_items(temp, code)
+        if announce or (before is not None and set(now) != set(before)):
+            wear = ", ".join(ACCESSORIES[i][0].lower() for i in now) or "ничего особенного"
+            self.bubble.say(f"{geo.get('name', self.city)}: {temp:+.0f}°, {weather_words(code)}. Надеваю: {wear}.", 9000)
+        self._wear(self._effective(), announce=False)
+
+    def _ask_city(self) -> None:
+        dlg = QInputDialog()
+        dlg.setWindowTitle("Погода")
+        dlg.setLabelText("Ваш город — Кай будет одеваться по погоде (Open-Meteo, без регистрации):")
+        dlg.setTextValue(self.city)
+        dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowStaysOnTopHint)
+        if dlg.exec():
+            self.city = dlg.textValue().strip()[:60]
+            save_state("city", self.city)
+            if not self.city:
+                self.weather = None
+                self._wear(self._effective(), announce=False)
+            self.check_weather(announce=True)
+
     def command(self, text: str) -> bool:
         """Фраза Каю: «передай Антону привет», «покажи сердечко», «надень шарф»… False — это не ему."""
         act = commands.parse(text)
@@ -748,6 +939,8 @@ class Pet(QWidget):
         self.say(act.say, 6000)
         if act.look:                           # «надень шарф», «стань рыжим», «верни как было»
             self.change_look(act.look)
+        if act.sign is not None:               # «покажи табличку Привет», «убери табличку»
+            self.set_sign(act.sign)
         return True
 
     # --- что делаете вы ---
@@ -773,6 +966,7 @@ class Pet(QWidget):
             self._hint(BREAK_HINTS)
         try:
             title, process = active_window()
+            self._title = title
             self.app = app_mood(self.cfg.moods, title, process)
         except (OSError, AttributeError) as e:   # окно закрылось на ходу — просто без эмоции программы
             log.debug("Активное окно не прочитано: %s", e)
@@ -803,14 +997,16 @@ class Pet(QWidget):
             if time.monotonic() < self.flash[1]:
                 return self.flash[0]
             self.flash = None
+        if self.sign_text and self._has("sign"):
+            return "sign"                      # держит табличку, пока её не уберут
         c, g = self._cursor(), self.geometry()
         look = look_at(c.x() - g.center().x(), c.y() - g.center().y(), self.cfg.look_radius_px, self.size_px / 2)
         if look:
             return look
         if self.music:
-            return "groove"
+            return self.dance_style if self._has(self.dance_style) else "groove"
         if self._idle_s() > self.cfg.sleep_after_min * 60:
-            return "sleepy"
+            return "bed" if self._has("bed") else "sleepy"   # уходит спать в кроватку
         hour = datetime.datetime.now().hour
         mood = background_mood(self.app, hour, time.monotonic() - self.session_start, self.cfg.tired_after_min * 60)
         return mood if mood == "idle" or self._has(mood) else "idle"
@@ -818,7 +1014,8 @@ class Pet(QWidget):
     # --- кадры ---
     def _files(self, name: str) -> tuple[list[Path], int]:
         if name.startswith("look_"):
-            return [self.dir / "look" / f"{name[5:]}.png"], 24
+            file = self.dir / "look" / f"{name[5:]}.png"
+            return ([file], 24) if file.is_file() else ([], 24)
         for kind in ("frames", "moods"):
             files = sorted((self.dir / kind / name).glob("*.png"))
             if files:
@@ -920,6 +1117,24 @@ class Pet(QWidget):
             p.scale(k, k)
             p.translate(-half, -half)
         p.drawPixmap(0, 0, self._pix)
+        if self.shown == "sign" and self.sign_text:
+            self._paint_sign(p)
+
+    def _paint_sign(self, p: QPainter) -> None:
+        """Ваш текст на табличке: самый крупный шрифт, при котором он помещается."""
+        k = self.size_px / 256
+        rect = QRectF(*(v * k for v in SIGN_RECT))
+        flags = int(Qt.AlignCenter | Qt.TextWordWrap)
+        font = QFont(self.font())
+        font.setBold(True)
+        for px in range(max(6, int(rect.height() * 0.7)), 5, -1):
+            font.setPixelSize(px)
+            p.setFont(font)
+            box = p.boundingRect(rect, flags, self.sign_text)
+            if box.height() <= rect.height() and box.width() <= rect.width():
+                break
+        p.setPen(QColor("#3D3929"))
+        p.drawText(rect, flags, self.sign_text)
 
     def moveEvent(self, event):
         super().moveEvent(event)
@@ -1019,6 +1234,10 @@ class Pet(QWidget):
         save_state(key, on)
         if key == "seasonal":
             self._wear(self._effective(), announce=True)
+        if key == "weather":
+            if on:
+                self.check_weather(announce=True)
+            self._wear(self._effective(), announce=False)
 
     def contextMenuEvent(self, e):
         menu = QMenu()
@@ -1027,6 +1246,9 @@ class Pet(QWidget):
         for name, title in GESTURES.items():
             gestures.addAction(title).triggered.connect(lambda _c=False, n=name: self.gesture(n, 2))
         menu.addAction("Угостить печенькой").triggered.connect(lambda _c=False: self.feed())
+        menu.addAction("Табличка…").triggered.connect(lambda _c=False: self._ask_sign())
+        if self.sign_text:
+            menu.addAction("Убрать табличку").triggered.connect(lambda _c=False: self.set_sign(""))
         menu.addSeparator()
         dress = menu.addMenu("Внешность")
         current = self._pending_look or self._export_look or self.chosen
@@ -1067,6 +1289,12 @@ class Pet(QWidget):
         self._toggle(settings, "Танцевать под музыку", self.dance_on, lambda on: self._set_flag("dance", "dance_on", on))
         self._toggle(settings, "Сезонные образы", self.seasonal, lambda on: self._set_flag("seasonal", "seasonal", on))
         self._toggle(settings, "Охотиться за мышкой", self.chase_on, lambda on: self._set_flag("chase", "chase_on", on))
+        weather = menu.addMenu("Погода")
+        if self.weather and self.city:
+            weather.addAction(f"Сейчас: {self.weather[0]:+.0f}°, {weather_words(self.weather[1])}").setEnabled(False)
+        weather.addAction(f"Мой город: {self.city}…" if self.city else "Указать город…").triggered.connect(
+            lambda _c=False: self._ask_city())
+        self._toggle(weather, "Одеваться по погоде", self.weather_on, lambda on: self._set_flag("weather", "weather_on", on))
         menu.addSeparator()
         menu.addAction(self.friendship_text()).setEnabled(False)
         menu.addAction("Выход").triggered.connect(lambda _c=False: self.quit_requested.emit())

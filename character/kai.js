@@ -27,7 +27,8 @@ const COLOR_NAMES = { gray: 'Серый', ginger: 'Рыжий', graphite: 'Гр�
 const KINDS = { cat: 'Котик', fox: 'Лисёнок', bunny: 'Зайка', bear: 'Мишка' };
 // slot: на голове одна вещь, очки и шарф — к чему угодно
 const ACCESSORIES = { scarf: { ru: 'Шарфик', slot: 'neck' }, hat: { ru: 'Шапочка', slot: 'head' },
-  glasses: { ru: 'Очки', slot: 'face' }, headphones: { ru: 'Наушники', slot: 'head' }, crown: { ru: 'Корона', slot: 'head' } };
+  glasses: { ru: 'Очки', slot: 'face' }, headphones: { ru: 'Наушники', slot: 'head' }, crown: { ru: 'Корона', slot: 'head' },
+  sunglasses: { ru: 'Тёмные очки', slot: 'face' }, umbrella: { ru: 'Зонтик', slot: 'hand' } };
 // Свои вещи из папки accessories питомца: { id: { slot: 'head' | 'neck' | 'face', svg: '<svg viewBox="0 0 256 256">…' } }
 const CUSTOM = {};
 const LOOK = { kind: 'cat', color: 'gray', acc: [] };   // текущий образ; svg(..., { look }) может переопределить
@@ -60,7 +61,11 @@ const BASE = {
   armL: 6, armR: 6, step: 0,                 // лапки: 0 вниз, + наружу/вверх, − к груди; шаг −1..1
   heart: 0, thumbL: 0, thumbR: 0,            // жесты: сердечко в лапках, большой палец вверх (0 — нет)
   treat: 0,                                  // печенька в лапках (0 — нет, 1 — целая)
+  bed: 0, zzz: [1, 0],                       // спит в кроватке; zzz — фаза «Zzz» точкой на круге [cos, sin]
+  sign: 0,                                   // держит табличку (текст на ней рисует питомец)
 };
+// Табличка: x, y, ширина, высота в координатах кадра. Питомец пишет текст внутри (kai_pet/pet.py, SIGN_RECT).
+const SIGN = [36, 186, 184, 58];
 
 const PAIRS = { eyes: ['eyeL', 'eyeR'], open: ['openL', 'openR'], brow: ['browL', 'browR'],
   browY: ['browLY', 'browRY'], ears: ['earL', 'earR'], arms: ['armL', 'armR'] };
@@ -122,6 +127,12 @@ const STATES = {
 };
 
 const LOOKS = { center: [0, 0], left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };
+// Взгляд за курсором: 16 направлений, далеко (aNN) и близко (nNN). 0 — вправо, по часовой (y вниз).
+for (let i = 0; i < 16; i++) {
+  const a = i * TAU / 16, n = String(i).padStart(2, '0');
+  LOOKS['a' + n] = [f(Math.cos(a)), f(Math.sin(a))];
+  LOOKS['n' + n] = [f(0.5 * Math.cos(a)), f(0.5 * Math.sin(a))];
+}
 
 // Ключевые кадры: [[t, частичная поза], ...]; первый и последний ключ совпадают → бесшовный цикл.
 function keyed(keys) {
@@ -264,6 +275,41 @@ const ANIMS = {
     p.earL += 6 * b; p.earR -= 6 * b;
     return p;
   } },
+  // Танцы под разную музыку: спокойная — покачивается, быстрая — прыгает, рок — качает головой.
+  sway: { ru: 'Покачивается под спокойную музыку', frames: 48, fps: 24, state: 'neutral', fn: (p, t) => {
+    const s = Math.sin(TAU * t);
+    Object.assign(p, { eyeL: 'closed', eyeR: 'closed', mouth: 'smile', blush: 0.55, curl: 0.9, armL: 22 + 12 * s, armR: 22 - 12 * s });
+    p.rot += 5 * s; p.tilt += 8 * s; p.tail += 10 * s; p.earL += 8; p.earR += 8;
+    return p;
+  } },
+  bounce: { ru: 'Прыгает под быструю музыку', frames: 16, fps: 24, state: 'neutral', fn: (p, t) => {
+    const hop = Math.abs(Math.sin(TAU * t)), s = Math.sin(TAU * t);
+    Object.assign(p, { eyeL: 'happy', eyeR: 'happy', mouth: 'grin', mouthOpen: 0.9, spark: 1, blush: 0.65,
+      armL: 150 - 45 * hop, armR: 150 - 45 * hop, tail: 30 + 10 * s, curl: 0.4 });
+    p.y -= 14 * hop; p.sy *= 1 + 0.06 * (hop - 0.5); p.sx *= 1 - 0.04 * (hop - 0.5);
+    p.earL -= 10 * hop; p.earR -= 10 * hop;
+    return p;
+  } },
+  headbang: { ru: 'Качает головой под рок', frames: 12, fps: 24, state: 'neutral', fn: (p, t) => {
+    const s = Math.sin(TAU * t), down = Math.max(0, s);
+    Object.assign(p, { eyeL: 'squeeze', eyeR: 'squeeze', mouth: 'grin', mouthOpen: 0.8, brow: 10, armL: 160,
+      armR: 6 + 30 * down, tail: 22, curl: 0.2, look: [0, 0.5 * down] });
+    p.tilt += 14 * s; p.y += 4 * down; p.earL += 18 * s; p.earR -= 18 * s;
+    return p;
+  } },
+  bed: { ru: 'Спит в кроватке', frames: 48, fps: 12, state: 'neutral', fn: (p, t) => {
+    const b = Math.sin(TAU * t);
+    Object.assign(p, { bed: 1, zzz: [Math.cos(TAU * t), Math.sin(TAU * t)], eyeL: 'closed', eyeR: 'closed', mouth: 'o', mouthOpen: 0.25 + 0.15 * b, blush: 0.45,
+      ears: 24, arms: -40, tilt: 12, tail: -10, curl: 0.9, spark: 0.2 });
+    p.sy *= 1 + 0.025 * b; p.sx *= 1 - 0.015 * b;
+    return p;
+  } },
+  sign: { ru: 'Держит табличку', frames: 48, fps: 24, state: 'neutral', fn: (p, t) => {
+    const b = Math.sin(TAU * t);
+    Object.assign(p, { sign: 1, eyeL: 'happy', eyeR: 'happy', mouth: 'smile', blush: 0.55, arms: -60, tail: 14 + 6 * b });
+    p.sy *= 1 + 0.015 * b; p.tilt += 3 * b;
+    return p;
+  } },
   purr: { ru: 'Мурлычет', frames: 32, fps: 16, state: 'neutral', fn: (p, t) => {
     Object.assign(p, { eyeL: 'closed', eyeR: 'closed', mouth: 'smile', blush: 0.9, curl: 0.9 });
     p.sy *= 1 + 0.012 * Math.sin(8 * TAU * t);              // мелкая дрожь мурчания
@@ -304,7 +350,8 @@ const EARS = {
   bear: { out: 'M-17,-6 A17,17 0 1 1 17,-6 A17,17 0 1 1 -17,-6 Z',
     in: 'M-9,-6 A9,9 0 1 1 9,-6 A9,9 0 1 1 -9,-6 Z', angle: 22, tip: null },
 };
-const ACC_COLOR = { scarf: '#E05A47', hat: '#5B8DEF', crown: '#F2C14E', phones: '#5B6474', cups: '#E05A47' };
+const ACC_COLOR = { scarf: '#E05A47', hat: '#5B8DEF', crown: '#F2C14E', phones: '#5B6474', cups: '#E05A47',
+  umbrella: '#4FA3A5', wood: '#B07A4F', board: '#F6E7C8' };
 
 const star = (x, y, r) => `M${f(x)},${f(y - r)} Q${f(x)},${f(y)} ${f(x + r)},${f(y)} Q${f(x)},${f(y)} ${f(x)},${f(y + r)} ` +
   `Q${f(x)},${f(y)} ${f(x - r)},${f(y)} Q${f(x)},${f(y)} ${f(x)},${f(y - r)}Z`;
@@ -430,7 +477,10 @@ function svg(pose, opt = {}) {
   const whiskers = kind === 'bear' ? '' : `<g id="whiskers" style="fill:none;stroke:${ink};stroke-width:2.2;stroke-linecap:round;opacity:.8">` +
     `<path d="M107,167 L80,161"/><path d="M107,172 L79,172"/><path d="M107,177 L81,184"/>` +
     `<path d="M149,167 L176,161"/><path d="M149,172 L177,172"/><path d="M149,177 L175,184"/></g>`;
-  const glasses = wear.has('glasses') ? `<g id="acc-glasses" style="fill:${cream};fill-opacity:.18;stroke:${ink};stroke-width:3.5">` +
+  const shades = `<g id="acc-sunglasses" style="fill:${ink};fill-opacity:.88;stroke:${ink};stroke-width:3.5">` +
+    `<circle cx="99" cy="151" r="18"/><circle cx="157" cy="151" r="18"/><path d="M117,149 Q128,142 139,149" style="fill:none"/>` +
+    `<path d="M88,145 L95,139 M146,145 L153,139" style="fill:none;stroke:${cream};stroke-width:3;stroke-linecap:round;opacity:.7"/></g>`;
+  const glasses = wear.has('sunglasses') ? shades : wear.has('glasses') ? `<g id="acc-glasses" style="fill:${cream};fill-opacity:.18;stroke:${ink};stroke-width:3.5">` +
     `<circle cx="99" cy="151" r="18"/><circle cx="157" cy="151" r="18"/>` +
     `<path d="M117,149 Q128,142 139,149" style="fill:none"/></g>` : '';
 
@@ -465,11 +515,37 @@ function svg(pose, opt = {}) {
     `<circle r="11" style="fill:${acc};stroke:${ink};stroke-width:3"/>` +
     `<g style="fill:${ink}"><circle cx="-4" cy="-3" r="1.7"/><circle cx="4" cy="-1" r="1.7"/><circle cx="-1" cy="5" r="1.7"/></g></g>` : '';
 
+  // Кровать: изголовье и подушка позади (не дышат), одеяло дышит вместе с Каем, «Zzz» над головой.
+  const inBed = p.bed > 0.5, busyPaws = inBed || p.sign > 0.5;
+  const bedBack = inBed ? `<g id="bed-back" style="stroke:${ink};stroke-width:4;stroke-linejoin:round">` +
+    `<path d="M30,236 L30,112 Q30,92 50,92 L206,92 Q226,92 226,112 L226,236 Z" style="fill:${ACC_COLOR.wood}"/>` +
+    `<ellipse cx="128" cy="140" rx="86" ry="26" style="fill:${cream}"/></g>` : '';
+  const blanket = inBed ? `<g id="blanket" style="stroke:${ink};stroke-width:4;stroke-linejoin:round">` +
+    `<path d="M22,194 Q76,182 128,190 Q180,198 234,186 L234,238 L22,238 Z" style="fill:${acc}"/>` +
+    `<path d="M24,206 Q128,218 232,200" style="fill:none;stroke:${cream};stroke-width:3;opacity:.6"/></g>` : '';
+  const bedBase = inBed ? `<rect x="16" y="232" width="224" height="14" rx="5" style="fill:${ACC_COLOR.wood};stroke:${ink};stroke-width:4"/>` : '';
+  let zzz = '';
+  const phase = (Math.atan2(p.zzz[1], p.zzz[0]) / TAU + 1) % 1;
+  if (inBed) for (let i = 0; i < 3; i++) {
+    const u = (phase + i / 3) % 1, z = 6 + 7 * u;
+    zzz += `<path d="M0,0 L${f(z)},0 L0,${f(z)} L${f(z)},${f(z)}" transform="translate(${f(172 + 28 * u)} ${f(100 - 62 * u)})" ` +
+      `style="fill:none;stroke:${ink};stroke-width:3;stroke-linecap:round;stroke-linejoin:round;opacity:${f(Math.sin(Math.PI * u))}"/>`;
+  }
+  // Табличка — неподвижна, чтобы питомец точно попал текстом; лапки держат верхние углы.
+  const [sx0, sy0, sw, sh] = SIGN;
+  const sign = p.sign > 0.5 ? `<g id="prop-sign" style="stroke:${ink};stroke-width:4;stroke-linejoin:round">` +
+    `<rect x="${sx0}" y="${sy0}" width="${sw}" height="${sh}" rx="8" style="fill:${ACC_COLOR.board}"/>` +
+    `<g style="fill:${main}"><circle cx="${sx0 + 16}" cy="${sy0 + 3}" r="12"/><circle cx="${sx0 + sw - 16}" cy="${sy0 + 3}" r="12"/></g></g>` : '';
+  // Зонтик в правой лапке (лапка рисуется поверх ручки — держит).
+  const umbrella = wear.has('umbrella') && !busyPaws ? `<g id="acc-umbrella" style="stroke:${ink};stroke-width:4;stroke-linejoin:round;stroke-linecap:round">` +
+    `<path d="M190,58 L190,214 Q190,226 179,226" style="fill:none"/>` +
+    `<path d="M128,62 Q138,14 190,12 Q242,14 252,62 Q237,52 221,62 Q206,52 190,62 Q174,52 159,62 Q143,52 128,62 Z" style="fill:${ACC_COLOR.umbrella}"/></g>` : '';
+
   const flip = p.facing < 0 ? 'translate(256 0) scale(-1 1) ' : '';
   const T = `${flip}translate(0 ${f(p.y)}) rotate(${f(p.rot)} 128 228) translate(128 228) scale(${f(p.sx)} ${f(p.sy)}) translate(-128 -228)`;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}" width="${size}" height="${size}">` +
     `<defs><clipPath id="${id}-ear"><path d="${E.out}"/></clipPath></defs>` +
-    `<g id="kai" transform="${T}">${tail}<g id="ears" transform="${tilt}">${ear(-1)}${ear(1)}</g>${body}${spark}${scarf}${feet}${arm(-1)}${arm(1)}${heart}${face}${treat}${hat}${mine}</g></svg>`;
+    `${bedBack}<g id="kai" transform="${T}">${tail}<g id="ears" transform="${tilt}">${ear(-1)}${ear(1)}</g>${body}${spark}${scarf}${feet}${umbrella}${arm(-1)}${arm(1)}${blanket}${heart}${face}${treat}${hat}${mine}</g>${bedBase}${zzz}${sign}</svg>`;
 }
 
 // ── Публичный API
@@ -509,6 +585,6 @@ function mount(el, opts = {}) {
   };
 }
 
-const Kai = { PALETTE, PALETTES, COLOR_NAMES, KINDS, ACCESSORIES, CUSTOM, LOOK, lookId, SIZE, BASE, STATES, ANIMS, LOOKS, expand, blend, pose, svg, frame, frames, mount };
+const Kai = { PALETTE, PALETTES, COLOR_NAMES, KINDS, ACCESSORIES, CUSTOM, SIGN, LOOK, lookId, SIZE, BASE, STATES, ANIMS, LOOKS, expand, blend, pose, svg, frame, frames, mount };
 if (typeof module !== 'undefined' && module.exports) module.exports = Kai; else root.Kai = Kai;
 })(this);
