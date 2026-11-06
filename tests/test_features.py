@@ -40,6 +40,8 @@ def pet(monkeypatch, tmp_path, played):
     monkeypatch.setattr(pet_module, "active_window_rect", lambda: None)
     monkeypatch.setattr(pet_module, "input_idle_s", lambda: 0.0)
     monkeypatch.setattr(pet_module, "audio_peak", lambda: 0.0)
+    monkeypatch.setattr(pet_module, "audible_apps", lambda: {"spotify.exe"})     # звучит музыкальная программа
+    monkeypatch.setattr(pet_module, "window_at", lambda x, y, skip: None)      # под Каем — рабочий стол
     monkeypatch.setattr(pet_module, "background_mood", lambda app, *_: app or "idle")
     p = pet_module.Pet()
     p.once = None
@@ -430,12 +432,12 @@ def test_every_mood_has_real_dances_and_they_rotate():
 
 def test_dance_follows_style(pet, monkeypatch):
     monkeypatch.setattr(pet_module, "audio_peak", lambda: 0.3)
-    pet._title = "Chill piano"
+    pet._media_title = "Chill piano - YouTube"
     for _ in range(pet_module.MUSIC_SAMPLES):
         pet._listen()
     calm = pet.dance_style
     assert pet.music and pet.music_mood == "calm" and calm in ("sway", "waltz") and pet.current() == calm
-    pet._title = "Rock radio"
+    pet._media_title = "Rock radio"
     pet._listen()
     assert pet.dance_style == calm                         # не дёргается: пересматривает раз в 15 с
     pet._style_at -= pet_module.STYLE_EVERY_S + 1
@@ -641,3 +643,111 @@ def test_menu_offers_fit_and_dialog_saves(pet, monkeypatch, tmp_path):
     monkeypatch.setattr(pet, "_run_dialog", run)
     pet._open_fit()
     assert saved == [("my_santa", 1.5)]                                         # сохраняется только изменённое
+
+
+
+# --- танцует только под музыку ---
+@pytest.mark.parametrize("apps, title, music", [
+    ({"spotify.exe"}, "", True),                                               # музыкальная программа
+    ({"discord.exe"}, "Imagine Dragons - Believer", False),                    # звонок — не музыка
+    ({"cs2.exe"}, "", False),                                                  # игра
+    (set(), "", False),                                                        # никто не звучит
+    ({"chrome.exe"}, "(280) ChatGPT vs DeepSeek vs GROK: кто лучше в CS2 - YouTube - Google Chrome", False),
+    ({"chrome.exe"}, "Imagine Dragons - Believer - YouTube - Google Chrome", True),
+    ({"chrome.exe"}, "Lofi hip hop radio - beats to relax - YouTube", True),
+    ({"msedge.exe"}, "Подкаст про ИИ — выпуск 12 - YouTube", False),
+    ({"chrome.exe"}, "Как приготовить плов за 30 минут - YouTube", False),
+    ({"vlc.exe"}, "Queen - Bohemian Rhapsody - VLC media player", True),
+])
+def test_is_music(apps, title, music):
+    assert pet_module.is_music(apps, title, [0.25] * 60) is music
+
+
+def test_speech_like_sound_is_not_music():
+    speech = [0.3 if i % 4 else 0.0 for i in range(60)]                     # паузы между словами
+    assert not pet_module.sustained(speech) and pet_module.sustained([0.25] * 60)
+    assert not pet_module.is_music({"chrome.exe"}, "Иван - Привет", speech)   # похоже на песню, но звучит речь
+
+
+def test_kai_ignores_game_sound(pet, monkeypatch):
+    monkeypatch.setattr(pet_module, "audio_peak", lambda: 0.4)
+    pet._apps = {"cs2.exe"}
+    for _ in range(pet_module.MUSIC_SAMPLES):
+        pet._listen()
+    assert not pet.music and pet.current() not in pet_module.DANCES
+    pet._apps = {"chrome.exe"}
+    pet._media_title = "Daft Punk - Get Lucky - YouTube - Google Chrome"   # вкладка с музыкой в фоне
+    pet._listen()
+    assert pet.music
+
+
+def test_media_tab_remembered_while_working_elsewhere(pet, monkeypatch):
+    windows = iter([("Daft Punk - Get Lucky - YouTube - Google Chrome", "chrome.exe"), ("main.py - VS Code", "Code.exe")])
+    monkeypatch.setattr(pet_module, "active_window", lambda: next(windows))
+    pet._observe()
+    pet._observe()
+    assert pet._title == "main.py - VS Code" and pet._media_title.startswith("Daft Punk")
+
+
+# --- держится за любое окно ---
+def test_dropped_on_window_rides_along_and_hides_with_it(pet, monkeypatch):
+    rect = [100, 100, 900, 700]
+    state = {"min": False, "alive": True}
+    monkeypatch.setattr(pet_module, "window_at", lambda x, y, skip: (777, "Документ — Word"))
+    monkeypatch.setattr(pet_module, "window_rect", lambda h: tuple(rect) if state["alive"] else None)
+    monkeypatch.setattr(pet_module, "window_minimized", lambda h: state["min"])
+    pet.show()
+    r = pet.devicePixelRatioF()
+    pet.move(round(400 / r), round(300 / r))
+    pet._dropped()
+    assert pet._pin["hwnd"] == 777 and "Word" in pet.bubble.text.text()
+    rect[0] += 200
+    rect[1] += 50                                                     # окно передвинули
+    pet._follow_window()
+    assert (round(pet.x() * r), round(pet.y() * r)) == (600, 350)
+    state["min"] = True                                               # свернули — Кай прячется
+    pet._follow_window()
+    assert not pet.isVisible()
+    state["min"] = False
+    pet._follow_window()
+    assert pet.isVisible()
+    state["alive"] = False                                            # закрыли — остаётся на месте
+    pet._follow_window()
+    assert pet._pin is None and "закрылось" in pet.bubble.text.text()
+
+
+def test_dropped_on_desktop_or_edge_does_not_pin(pet, monkeypatch):
+    pet.move(500, 400)
+    pet._dropped()
+    assert pet._pin is None and pet.dock == "free"                    # рабочий стол — просто сидит
+    monkeypatch.setattr(pet_module, "window_at", lambda x, y, skip: (777, "Окно"))
+    monkeypatch.setattr(pet_module, "window_rect", lambda h: (0, 0, 5000, 5000))
+    area = pet._area()
+    pet.move(area.left() + 2, area.top() + 300)
+    pet._dropped()
+    assert pet._snapped and pet._pin is None                          # у края экрана — липнет к краю, не к окну
+
+
+def test_unpin_from_menu_and_dock_change(pet, monkeypatch):
+    monkeypatch.setattr(pet_module, "window_at", lambda x, y, skip: (777, "Окно"))
+    monkeypatch.setattr(pet_module, "window_rect", lambda h: (0, 0, 3000, 3000))
+    pet.move(500, 400)
+    pet._dropped()
+    titles = []
+    monkeypatch.setattr(pet, "_show_menu", lambda menu, pos: titles.extend(
+        b.text() for a in menu.actions() if a.menu() for b in a.menu().actions()))
+
+    class Ev:
+        def globalPos(self):
+            return QPoint(0, 0)
+    pet.contextMenuEvent(Ev())
+    assert "Держусь за «Окно»" in titles and "Отпустить окно" in titles
+    pet.set_dock("corner")
+    assert pet._pin is None
+
+
+def test_window_helpers_never_crash():
+    assert pet_module.window_rect(0) is None
+    assert pet_module.window_minimized(0) is False
+    found = pet_module.window_at(-99999, -99999, set())
+    assert found is None

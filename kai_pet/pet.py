@@ -87,7 +87,26 @@ PET_DISTANCE, PET_GAP_S = 450, 0.8         # столько провести м�
 FRIEND_LEVELS = (5, 15, 35, 70, 120)       # очки дружбы до каждого следующего сердечка
 SNAP_PX = 48            # ближе к краю экрана — Кай прилипает и поворачивается лапками к этому краю
 EDGE_ANGLE = {"bottom": 0, "left": 90, "top": 180, "right": 270}
-DOCKS = {"corner": "В углу экрана", "window": "Сверху на активном окне", "free": "Где оставлю (липнет к краям)"}
+DOCKS = {"corner": "В углу экрана", "window": "Сверху на активном окне",
+         "free": "Где оставлю: на столе или на любом окне"}
+PIN_FOLLOW_MS = 150     # как часто Кай догоняет окно, за которое держится
+_NOT_WINDOWS = {"Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"}   # рабочий стол и панель задач
+# Танцевать только под музыку: кто звучит — музыкальная программа, браузер/плеер или что-то другое (звонок, игра).
+MUSIC_APPS = {"spotify.exe", "yandexmusic.exe", "яндекс музыка.exe", "aimp.exe", "foobar2000.exe", "winamp.exe",
+              "itunes.exe", "applemusic.exe", "music.ui.exe", "musicbee.exe", "tidal.exe", "deezer.exe",
+              "audacious.exe", "clementine.exe", "strawberry.exe", "vkmusic.exe", "boom.exe"}
+MEDIA_APPS = {"chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "browser.exe", "brave.exe", "vivaldi.exe",
+              "arc.exe", "yandex.exe", "vlc.exe", "mpc-hc64.exe", "mpc-hc.exe", "potplayermini64.exe",
+              "potplayermini.exe", "wmplayer.exe", "microsoft.media.player.exe"}
+_MUSIC_TITLE = re.compile(r"music|музык|spotify|soundcloud|песн|\bsong|lyrics|official (?:music )?video|клип|remix|"
+                          r"\bfeat\.|\bft\.|playlist|плейлист|radio|радио|album|альбом|\bmix\b|микс|cover|кавер|"
+                          r"lo-?fi|\bbeats?\b|\bost\b|саундтрек|soundtrack|концерт|concert|\bdj\b")
+_TALK_TITLE = re.compile(r"podcast|подкаст|interview|интервью|lecture|лекци|урок|tutorial|обзор|review|\bnews\b|"
+                         r"новост|стрим|\bstream|vlog|влог|разбор|курс|вебинар|webinar|звонок|meeting|встреча")
+DIPS_MAX = 0.12         # у речи между словами тишина — больше 12 % провалов, у музыки звук почти не стихает
+_TITLE_TAIL = re.compile(r"\s[-–—]\s(?:youtube|google chrome|mozilla firefox|microsoft\S*\s?edge|яндекс\s?браузер|"
+                         r"opera|brave|vivaldi|vlc media player|media player)\b.*$")
+_SONG_TITLE = re.compile(r"^[^:?!|/]{1,40}\s[-–—]\s[^:?!|/]{1,60}$")   # «Исполнитель - Песня»
 
 # Гардероб — те же имена, что в character/kai.js (KINDS, PALETTES, ACCESSORIES).
 KINDS = {"cat": "Котик", "fox": "Лисёнок", "bunny": "Зайка", "bear": "Мишка"}
@@ -256,6 +275,125 @@ def audio_peak() -> float:
         log.debug("Громкость не прочитана: %s", e)
         _meter[0] = None
         return 0.0
+
+
+_sessions: list = [None, 0.0]             # [(программа, индикатор громкости)], когда собрали
+
+
+def audible_apps() -> set[str] | None:
+    """Какие программы сейчас звучат (имена .exe строчными). None — узнать нельзя (не Windows, нет pycaw)."""
+    if sys.platform != "win32":
+        return None
+    try:
+        if _sessions[0] is None or time.monotonic() - _sessions[1] > 10:   # новые программы — раз в 10 с
+            from pycaw.pycaw import AudioUtilities, IAudioMeterInformation
+            found = []
+            for s in AudioUtilities.GetAllSessions():
+                try:
+                    if s.Process is not None:
+                        found.append((s.Process.name().lower(), s._ctl.QueryInterface(IAudioMeterInformation)))
+                except Exception:                # программа как раз закрылась — без неё
+                    continue
+            _sessions[0], _sessions[1] = found, time.monotonic()
+        return {name for name, meter in _sessions[0] if meter.GetPeakValue() > MUSIC_LEVEL}
+    except Exception as e:
+        log.debug("Звучащие программы не прочитаны: %s", e)
+        _sessions[0] = None
+        return None
+
+
+def sustained(levels, window: int = 50) -> bool:
+    """Звук почти не стихает (музыка), а не прерывается паузами (речь). levels — 10 замеров в секунду."""
+    recent = list(levels)[-window:]
+    if len(recent) < 30:
+        return True                            # ещё не наслушались — решит программа и название
+    mean = sum(recent) / len(recent)
+    return mean > 0 and sum(v < 0.1 * mean for v in recent) / len(recent) <= DIPS_MAX
+
+
+def media_title(title: str) -> str:
+    """Название ролика или трека без «(3)», « - YouTube», « - Google Chrome»."""
+    t = re.sub(r"^\(\d+\)\s*", "", title.strip().lower())
+    for _ in range(2):                          # « - YouTube - Google Chrome»
+        t = _TITLE_TAIL.sub("", t)
+    return t
+
+
+def is_music(apps: set[str] | None, title: str, levels) -> bool:
+    """Танцевать ли. Музыкальная программа — да; звонок, игра, система — нет. Браузер и плеер — только если
+    по названию это песня (music, клип, lyrics, «Исполнитель - Песня») и звук ровный: обзоры и игры — нет."""
+    if apps is not None:
+        if apps & MUSIC_APPS:
+            return True
+        if not apps & MEDIA_APPS:
+            return False
+    t = media_title(title)
+    if _TALK_TITLE.search(t):
+        return False
+    if _MUSIC_TITLE.search(t):
+        return True
+    return bool(_SONG_TITLE.match(t)) and sustained(levels)
+
+
+def window_at(x: int, y: int, skip: set[int]) -> tuple[int, str] | None:
+    """Верхнее обычное окно в точке (настоящие пиксели), кроме своих: (hwnd, заголовок). Стол и панель — None."""
+    if sys.platform != "win32":
+        return None
+    user32 = ctypes.windll.user32
+
+    class _RECT(ctypes.Structure):
+        _fields_ = [(n, ctypes.c_long) for n in ("left", "top", "right", "bottom")]
+
+    found: list = []
+
+    def visit(hwnd, _param):
+        if not hwnd or hwnd in skip:
+            return True
+        h = ctypes.c_void_p(hwnd)
+        if not user32.IsWindowVisible(h) or user32.IsIconic(h):
+            return True
+        if user32.GetWindowLongW(h, -20) & 0x80:          # WS_EX_TOOLWINDOW: всплывашки, сам Кай
+            return True
+        cls = ctypes.create_unicode_buffer(64)
+        user32.GetClassNameW(h, cls, 64)
+        if cls.value in _NOT_WINDOWS:
+            return True
+        cloaked = ctypes.c_int(0)                          # скрытые окна приложений Windows
+        ctypes.windll.dwmapi.DwmGetWindowAttribute(h, 14, ctypes.byref(cloaked), ctypes.sizeof(cloaked))
+        r = _RECT()
+        if cloaked.value or not user32.GetWindowRect(h, ctypes.byref(r)):
+            return True
+        if not (r.left <= x < r.right and r.top <= y < r.bottom):
+            return True
+        title = ctypes.create_unicode_buffer(256)
+        user32.GetWindowTextW(h, title, 256)
+        if title.value:
+            found.append((hwnd, title.value))
+            return False                                   # первое сверху — то, что видно
+        return True
+    proc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)(visit)
+    user32.EnumWindows(proc, 0)
+    return found[0] if found else None
+
+
+def window_rect(hwnd: int) -> tuple[int, int, int, int] | None:
+    """Где окно (настоящие пиксели); None — окно закрыли."""
+    if sys.platform != "win32":
+        return None
+    user32 = ctypes.windll.user32
+    h = ctypes.c_void_p(hwnd)
+    if not user32.IsWindow(h):
+        return None
+
+    class _RECT(ctypes.Structure):
+        _fields_ = [(n, ctypes.c_long) for n in ("left", "top", "right", "bottom")]
+
+    r = _RECT()
+    return (r.left, r.top, r.right, r.bottom) if user32.GetWindowRect(h, ctypes.byref(r)) else None
+
+
+def window_minimized(hwnd: int) -> bool:
+    return sys.platform == "win32" and bool(ctypes.windll.user32.IsIconic(ctypes.c_void_p(hwnd)))
 
 
 # --- правила (без Qt, легко проверять) ---
@@ -722,6 +860,10 @@ class Pet(QWidget):
         self.dance_style, self.music_mood, self._style_at, self._title = "groove", "normal", 0.0, ""
         self.sign_text = " ".join(str(state.get("sign", "")).split())[:SIGN_MAX]
         self.weather_on = bool(state.get("weather", True))
+        self._apps: set[str] | None = audible_apps()      # кто сейчас звучит (обновляется раз в 2 с)
+        self._media_title = ""                            # последний ролик/трек, который был впереди
+        self._pin: dict | None = None                     # окно, за которое Кай держится, и место на нём
+        self._pin_hid = False                             # спрятался, потому что окно свернули
         self.city = str(state.get("city", ""))
         self.weather: tuple[float, int] | None = None                         # (температура, код) — когда узнали
         self._weather_announce = False
@@ -759,7 +901,7 @@ class Pet(QWidget):
         self._watch.start(2000)
         self._perch = QTimer(self)
         self._perch.timeout.connect(self._follow_window)
-        self._perch.start(400)
+        self._perch.start(PIN_FOLLOW_MS)
         self._ear = QTimer(self)
         self._ear.timeout.connect(self._listen)
         self._ear.start(EAR_MS)
@@ -786,6 +928,7 @@ class Pet(QWidget):
         if self._run is not None:
             self._run.stop()
         _meter[0] = None                       # отпустить индикатор громкости, пока COM ещё работает
+        _sessions[0] = None
         self.bubble.deleteLater()
         self.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
@@ -987,12 +1130,13 @@ class Pet(QWidget):
         level = audio_peak()
         self._peaks.append(level)
         self._levels.append(level)
-        self.music = sum(p > MUSIC_LEVEL for p in self._peaks) >= MUSIC_NEED
+        loud = sum(p > MUSIC_LEVEL for p in self._peaks) >= MUSIC_NEED
+        self.music = loud and is_music(self._apps, self._media_title, self._levels)   # речь, звонок, игра — нет
         if not self.music:
             self._style_at = 0.0
         elif time.monotonic() - self._style_at > STYLE_EVERY_S:
             self._style_at = time.monotonic()
-            self.music_mood = music_mood(list(self._levels), self._title)
+            self.music_mood = music_mood(list(self._levels), media_title(self._media_title or self._title))
             self.dance_style = dance_for(self.music_mood, self.dance_style)
 
     # --- API: подключение к своему ассистенту ---
@@ -1142,6 +1286,9 @@ class Pet(QWidget):
         try:
             title, process = active_window()
             self._title = title
+            self._apps = audible_apps()
+            if process.lower() in MEDIA_APPS | MUSIC_APPS:
+                self._media_title = title          # музыка играет и в фоне — помним, что за вкладка
             self.app = app_mood(self.cfg.moods, title, process)
         except (OSError, AttributeError) as e:   # окно закрылось на ходу — просто без эмоции программы
             log.debug("Активное окно не прочитано: %s", e)
@@ -1347,6 +1494,7 @@ class Pet(QWidget):
         save_state("pos", f"{self.x()},{self.y()}")
 
     def set_dock(self, mode: str) -> None:
+        self.unpin()
         self.dock = mode if mode in DOCKS else "corner"
         if self.dock != "free":
             self.angle, self._snapped = 0, False   # в углу и на окне Кай стоит на лапках
@@ -1361,9 +1509,65 @@ class Pet(QWidget):
         self._save_place()
         self.update()
 
+    # --- держится за окно ---
+    def _try_pin(self) -> None:
+        """Отпустили на окне — держится за него в этом месте; на рабочем столе — просто сидит."""
+        self._pin = None
+        ratio = self.devicePixelRatioF()
+        g = self.geometry()
+        feet = (round(g.center().x() * ratio), round((g.top() + g.height() * 0.85) * ratio))
+        try:
+            found = window_at(*feet, {int(self.winId()), int(self.bubble.winId())})
+            rect = window_rect(found[0]) if found else None
+        except OSError as e:
+            log.debug("Окно под Каем не прочитано: %s", e)
+            found = rect = None
+        if not found or not rect:
+            return
+        hwnd, title = found
+        self._pin = {"hwnd": hwnd, "title": title,
+                     "dx": round(self.x() * ratio) - rect[0], "dy": round(self.y() * ratio) - rect[1]}
+        short = title if len(title) <= 28 else title[:27] + "…"
+        self.bubble.say(f"Держусь за «{short}»", 4000)
+
+    def unpin(self) -> None:
+        self._pin = None
+        if self._pin_hid:
+            self._pin_hid = False
+            self.show()
+
+    def _follow_pin(self) -> None:
+        pin = self._pin
+        try:
+            rect = window_rect(pin["hwnd"])
+            minimized = rect is not None and window_minimized(pin["hwnd"])
+        except OSError:
+            rect, minimized = None, False
+        if rect is None:                             # окно закрыли — остаёмся там, где были
+            self.unpin()
+            self.bubble.say("Окно закрылось — посижу здесь.", 4000)
+            return
+        if minimized:                                # окно свернули — Кай прячется вместе с ним
+            if self.isVisible():
+                self._pin_hid = True
+                self.hide()
+            return
+        if self._pin_hid:
+            self._pin_hid = False
+            self.show()
+        ratio = self.devicePixelRatioF()
+        target = QPoint(round((rect[0] + pin["dx"]) / ratio), round((rect[1] + pin["dy"]) / ratio))
+        if (target - self.pos()).manhattanLength() > 1:
+            self.move(target)
+
     def _follow_window(self) -> None:
         """Режим «на окне»: Кай сидит на верхней кромке окна впереди и ездит вместе с ним."""
-        if self.dock != "window" or self._press:
+        if self._press:
+            return
+        if self._pin:
+            self._follow_pin()
+            return
+        if self.dock != "window":
             return
         try:
             rect = active_window_rect()
@@ -1377,15 +1581,19 @@ class Pet(QWidget):
             self.move(target)
 
     def _dropped(self) -> None:
-        """Кая отпустили после перетаскивания: у края прилипает и ложится лапками к краю."""
+        """Кая отпустили после перетаскивания: у края экрана прилипает и ложится лапками к краю,
+        на окне — держится за это окно, на рабочем столе — сидит, где оставили."""
         self.dock = "free"
+        self._pin = None
         snap = snap_edge(self.x(), self.y(), self.size_px, self._area())
         if snap:
             x, y, edge = snap
             self.move(x, y)
             self.angle, self._snapped = EDGE_ANGLE[edge], True
-        elif self._snapped:
-            self.angle, self._snapped = 0, False   # оторвали от края — снова стоит ровно
+        else:
+            if self._snapped:
+                self.angle, self._snapped = 0, False   # оторвали от края — снова стоит ровно
+            self._try_pin()
         self._save_place()
         self.update()
 
@@ -1452,8 +1660,16 @@ class Pet(QWidget):
         for mode, title in DOCKS.items():
             action = place.addAction(title)
             action.setCheckable(True)
-            action.setChecked(self.dock == mode)
+            action.setChecked(self.dock == mode and not self._pin)
             action.triggered.connect(lambda _c=False, m=mode: self.set_dock(m))
+        if self._pin:
+            held = place.addAction(f"Держусь за «{self._pin['title'][:30]}»")
+            held.setCheckable(True)
+            held.setChecked(True)
+            held.setEnabled(False)
+            place.addAction("Отпустить окно").triggered.connect(lambda _c=False: self.unpin())
+        place.addSeparator()
+        place.addAction("Перетащите Кая на любое окно — будет ездить вместе с ним").setEnabled(False)
         turn = menu.addMenu("Повернуть")
         for title, delta in (("По часовой ↻", 90), ("Против часовой ↺", -90), ("Вверх лапками", 180)):
             turn.addAction(title).triggered.connect(lambda _c=False, d=delta: self.set_angle(self.angle + d))

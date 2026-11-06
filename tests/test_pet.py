@@ -81,6 +81,9 @@ def pet(monkeypatch, tmp_path):
     monkeypatch.setenv("KAI_PET_STATE", str(tmp_path / "state.json"))   # образ — свой у каждого теста
     monkeypatch.setattr(pet_module, "active_window", lambda: ("", "explorer.exe"))
     monkeypatch.setattr(pet_module, "input_idle_s", lambda: 0.0)
+    monkeypatch.setattr(pet_module, "audio_peak", lambda: 0.0)
+    monkeypatch.setattr(pet_module, "audible_apps", lambda: None)
+    monkeypatch.setattr(pet_module, "window_at", lambda x, y, skip: None)
     monkeypatch.setattr(pet_module, "background_mood", lambda app, *_: app or "idle")
     p = pet_module.Pet()
     p.once = None
