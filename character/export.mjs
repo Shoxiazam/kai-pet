@@ -1,6 +1,6 @@
 // Экспорт PNG-кадров в assets/ через headless Edge/Chrome (DevTools Protocol), без npm: node character/export.mjs
 import { spawn } from 'node:child_process';
-import { mkdirSync, writeFileSync, rmSync, mkdtempSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, rmSync, mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -50,8 +50,12 @@ try {
   await send('Page.navigate', { url: pathToFileURL(join(here, 'export.html')).href });
   for (let i = 0; i < 50 && (await ev('typeof grid').catch(() => '')) !== 'function'; i++) await new Promise(r => setTimeout(r, 100));
   if (LOOK) await ev(`Object.assign(Kai.LOOK, ${JSON.stringify(LOOK)}), true`);
-  // Свои вещи (KAI_CUSTOM='{"my_bow":{"slot":"head","svg":"<svg…"}}') — питомец читает их из папки accessories.
-  if (process.env.KAI_CUSTOM) await ev(`Object.assign(Kai.CUSTOM, ${JSON.stringify(JSON.parse(process.env.KAI_CUSTOM))}), true`);
+  // Свои вещи: KAI_CUSTOM_FILE — JSON {"my_bow":{"slot":"head","svg":"<svg…"}}. Файлом, а не переменной:
+  // у Windows переменная окружения — до 32 тысяч знаков, а SVG бывает больше.
+  if (process.env.KAI_CUSTOM_FILE) {
+    const custom = JSON.parse(readFileSync(process.env.KAI_CUSTOM_FILE, 'utf8'));
+    await ev(`Object.assign(Kai.CUSTOM, ${JSON.stringify(custom)}), true`);
+  }
 
   for (const d of ['frames', 'states', 'moods', 'look']) rmSync(join(OUT, d), { recursive: true, force: true });
   const save = async (rel, expr) => {

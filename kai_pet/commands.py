@@ -156,6 +156,14 @@ _SIGN_OFF = re.compile(r"^(?:убери|опусти|выброси|спрячь
 _ANY_GESTURE = re.compile(rf"{_VERB}\s+(?:какой[- ]нибудь\s+|любой\s+|свой\s+|какой[- ]то\s+)?жест")
 
 
+# «Станцуй» — каждый раз другой танец.
+PARTY_DANCES = ("dance", "disco", "bounce", "hiphop", "robot", "clapdance", "airguitar")
+
+
+def _any_dance(anim: str) -> str:
+    return random.choice(PARTY_DANCES) if anim == "dance" else anim
+
+
 def parse(text: str) -> KaiAction | None:
     """Команда Каю или None, если это не ему (например, просьба отправить сообщение)."""
     original = _ADDRESS.sub("", text.strip())          # имена с заглавной берём из исходной фразы
@@ -193,8 +201,8 @@ def parse(text: str) -> KaiAction | None:
         return act
     if _ANY_GESTURE.search(t):
         anim, phrases = random.choice([(a, p) for _r, a, p in _GESTURES if a in ("heart", "like", "clap", "dance")])
-        return KaiAction(anim, random.choice(phrases), 3 if anim in ("heart", "dance") else 2)
+        return KaiAction(_any_dance(anim), random.choice(phrases), 3 if anim in ("heart", "dance") else 2)
     for rx, anim, phrases in _GESTURES + _EMOTIONS:
         if re.search(rx, t):
-            return KaiAction(anim, random.choice(phrases), 3 if anim in ("heart", "dance") else 2)
+            return KaiAction(_any_dance(anim), random.choice(phrases), 3 if anim in ("heart", "dance") else 2)
     return None

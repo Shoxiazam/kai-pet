@@ -265,15 +265,105 @@ def test_custom_accessories(tmp_path, monkeypatch):
 def test_custom_accessory_goes_to_export(pet, monkeypatch, tmp_path):
     folder = tmp_path / "acc"
     folder.mkdir()
-    (folder / "head-bow.svg").write_text("<svg><circle r='5'/></svg>", encoding="utf-8")
+    big = "".join(f"<circle cx='{i % 256}' cy='{i % 200}' r='3'/>" for i in range(3000))   # > 32 тысяч знаков
+    (folder / "head-bow.svg").write_text(f"<svg viewBox='0 0 256 256'>{big}</svg>", encoding="utf-8")
+    monkeypatch.setattr(pet, "looks_root", lambda: tmp_path / "looks")
     started = {}
     monkeypatch.setattr(pet_module.shutil, "which", lambda name: "node")
-    monkeypatch.setattr(pet_module.QProcess, "start", lambda self: started.update(
-        custom=self.processEnvironment().value("KAI_CUSTOM")))
-    pet._start_export(pet_module.normalize_look({"acc": ["my_bow"]}), announce=False)
-    assert "circle" in started["custom"] and '"slot": "head"' in started["custom"]
-    pet._export.finished.disconnect()
-    pet._export = None
+
+    def start(self):
+        file = self.processEnvironment().value("KAI_CUSTOM_FILE")
+        started.update(env=self.processEnvironment().value("KAI_CUSTOM"), custom=Path(file).read_text(encoding="utf-8"))
+    monkeypatch.setattr(pet_module.QProcess, "start", start)
+    look = pet_module.normalize_look({"acc": ["my_bow"]})
+    pet._start_export(look, announce=False)
+    assert not started["env"] and "circle" in started["custom"] and '"slot": "head"' in started["custom"]
+    pet._export_done(look, pet.look_dir(look).with_name("x.tmp"), 1, announce=False)    # файл убирается за собой
+    assert not list((tmp_path / "looks").glob("*.custom.json"))
+
+
+def test_node_that_fails_to_start_does_not_hang_kai(pet, monkeypatch, tmp_path):
+    monkeypatch.setattr(pet, "looks_root", lambda: tmp_path / "looks")
+    monkeypatch.setattr(pet_module.shutil, "which", lambda name: str(tmp_path / "нет-такого-node.exe"))
+    pet._start_export(pet_module.normalize_look({"acc": ["scarf"]}), announce=False)
+    QApplication.processEvents()
+    assert pet._export is None                                   # не «переодевается» вечно
+    assert "Не получилось переодеться" in pet.bubble.text.text()
+
+
+FREEPIK_LIKE = """<?xml version="1.0" encoding="utf-8"?>
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" style="enable-background:new 0 0 800 800;">
+<g id="background"><rect style="fill:#FFFFFF" width="800" height="800"/></g>
+<g id="objects"><path d="M200,500 L400,200 L600,500 Z" style="fill:#E00"/>
+<rect x="300" y="760" width="200" height="12" style="fill:#333"/></g></svg>"""
+
+
+def _ink_box(fragment, size=256):
+    """Где на кадре 256×256 нарисована вещь: (x0, y0, x1, y1)."""
+    from PySide6.QtGui import QImage
+    from kai_pet.fit_dialog import preview
+    blank = QImage(size, size, QImage.Format_ARGB32)
+    blank.fill(0)
+    img = preview(blank, fragment, size)
+    pts = [(x, y) for y in range(size) for x in range(size) if img.pixelColor(x, y).alpha() > 40]
+    return min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts)
+
+
+def test_fit_svg_removes_background_and_signature():
+    QApplication.instance() or QApplication([])
+    out = pet_module.fit_svg(FREEPIK_LIKE, "head")
+    assert "background" not in out and 'width="800"' not in out and 'y="760"' not in out   # без фона и подписи
+    x0, y0, x1, y1 = _ink_box(out)
+    x, y, w, h, _align = pet_module.SLOT_BOX["head"]
+    assert x - 2 <= x0 and x1 <= x + w + 2 and y - 2 <= y0 and abs(y1 - (y + h)) <= 3   # на голове, сидит на макушке
+    nx0, ny0, nx1, ny1 = _ink_box(pet_module.fit_svg(FREEPIK_LIKE, "neck"))
+    assert ny0 >= pet_module.SLOT_BOX["neck"][1] - 2                                       # на шее — ниже
+
+
+def test_fit_svg_keeps_kai_sized_and_rejects_garbage():
+    own = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'><circle r='5'/></svg>"
+    out = pet_module.fit_svg(own, "head")
+    assert "<circle" in out and "transform" not in out                      # рисунок под Кая — как есть
+    assert pet_module.fit_svg("это не svg", "head") == ""
+
+
+# --- подгонка своих вещей ---
+def test_normalize_and_place_fit():
+    assert pet_module.normalize_fit(None) == pet_module.DEFAULT_FIT
+    assert pet_module.normalize_fit({"scale": 99, "dx": -500, "rot": "x", "mirror": 1}) == \
+        {"scale": 2.5, "dx": -100, "dy": 0.0, "rot": 0.0, "mirror": True}
+    frag = pet_module.fit_svg(FREEPIK_LIKE, "head")
+    assert pet_module.place_fragment(frag, "head", {}) == frag                # без подгонки — без лишней обёртки
+    QApplication.instance() or QApplication([])
+    base = _ink_box(frag)
+    big = _ink_box(pet_module.place_fragment(frag, "head", {"scale": 1.5}))
+    assert big[2] - big[0] > (base[2] - base[0]) * 1.3                      # больше
+    right = _ink_box(pet_module.place_fragment(frag, "head", {"dx": 40}))
+    assert abs(right[0] - base[0] - 40) <= 2                                  # сдвиг вправо
+    up = _ink_box(pet_module.place_fragment(frag, "head", {"dy": -20}))
+    assert abs(up[1] - base[1] + 20) <= 2                                     # выше
+
+
+def test_fit_dialog_preview_follows_sliders(tmp_path):
+    QApplication.instance() or QApplication([])
+    from PySide6.QtGui import QImage
+    from kai_pet.fit_dialog import FitDialog
+    frag = pet_module.fit_svg(FREEPIK_LIKE, "head")
+    dlg = FitDialog([("my_a", "колпак", "head"), ("my_b", "бант", "head")],
+                    lambda item, fit: pet_module.place_fragment(frag, "head", fit),
+                    {"my_b": {"scale": 1.2}}, QImage(str(pet_module.ASSETS / "look" / "center.png")),
+                    pet_module.DEFAULT_FIT, first="my_b")
+    assert dlg.current() == "my_b" and dlg.sliders["scale"].value() == 120   # открылась на надетой вещи
+    before = dlg.view.pixmap().toImage()
+    dlg.sliders["dx"].setValue(30)
+    dlg.mirror.setChecked(True)
+    assert dlg.fits["my_b"]["dx"] == 30 and dlg.fits["my_b"]["mirror"] is True
+    assert dlg.view.pixmap().toImage() != before                               # превью перерисовалось
+    dlg.pick.setCurrentIndex(0)
+    assert dlg.sliders["dx"].value() == 0                                      # у другой вещи — своя подгонка
+    dlg.pick.setCurrentIndex(1)
+    dlg.reset()
+    assert dlg.fits["my_b"] == pet_module.DEFAULT_FIT
 
 
 def test_menu_lists_custom_things_and_chase_toggle(pet, monkeypatch, tmp_path):
@@ -309,16 +399,33 @@ def _beat(bpm, seconds=10, hz=10, base=0.2, kick=0.4):
     return [base + (kick if (i % period) < 1 else 0.0) for i in range(seconds * hz)]
 
 
-def test_music_style_by_title_and_sound():
-    steady = [0.25] * 100               # ровный тихий звук
-    assert pet_module.music_style(steady, "Lofi beats to study - YouTube") == "sway"
-    assert pet_module.music_style(steady, "Metallica — Enter Sandman") == "headbang"
-    assert pet_module.music_style(steady, "Phonk mix 2026") == "bounce"
-    assert pet_module.music_style(steady, "Урок математики") == "sway"       # «урок» — не рок
-    assert pet_module.music_style(steady) == "sway"                     # спокойный звук
-    assert pet_module.music_style(_beat(150)) == "bounce"               # быстрый бит
+@pytest.mark.parametrize("title, mood", [
+    ("Lofi beats to study - YouTube", "calm"), ("Metallica — Enter Sandman", "rock"),
+    ("Phonk mix 2026", "energetic"), ("Sad piano music", "sad"),          # грусть важнее «пианино»
+    ("Грустная песня — YouTube", "sad"), ("Eminem — Lose Yourself (rap)", "hiphop"), ("Русский рэп 2026", "hiphop"),
+    ("Вальс цветов — Чайковский", "classical"), ("Techno set", "electronic"), ("Disco hits 80s", "happy"),
+    ("Весёлая музыка для детей", "happy"), ("Урок математики", "calm"),   # «урок» — не рок, звук ровный
+])
+def test_music_mood_by_title(title, mood):
+    assert pet_module.music_mood([0.25] * 100, title) == mood
+
+
+def test_music_mood_by_sound():
+    assert pet_module.music_mood([0.25] * 100) == "calm"                 # ровный звук
+    assert pet_module.music_mood(_beat(150)) == "energetic"             # быстрый бит
     assert pet_module.tempo_bpm(_beat(120)) == 120
-    assert pet_module.music_style([0.2] * 10) == "groove"                # мало данных
+    assert pet_module.music_mood([0.2] * 10) == "normal"                 # мало данных
+
+
+def test_every_mood_has_real_dances_and_they_rotate():
+    for mood, dances in pet_module.MUSIC_MOODS.items():
+        for d in dances:
+            assert (pet_module.ASSETS / "frames" / d).is_dir(), (mood, d)
+    assert len(pet_module.DANCES) >= 11
+    for _ in range(20):
+        assert pet_module.dance_for("rock", "headbang") == "airguitar"   # другой танец того же настроения
+    assert pet_module.dance_for("sad", "sadsway") == "sadsway"           # другого нет — тот же
+    assert pet_module.dance_for("неизвестно") in pet_module.MUSIC_MOODS["normal"]
 
 
 def test_dance_follows_style(pet, monkeypatch):
@@ -326,13 +433,14 @@ def test_dance_follows_style(pet, monkeypatch):
     pet._title = "Chill piano"
     for _ in range(pet_module.MUSIC_SAMPLES):
         pet._listen()
-    assert pet.music and pet.dance_style == "sway" and pet.current() == "sway"
+    calm = pet.dance_style
+    assert pet.music and pet.music_mood == "calm" and calm in ("sway", "waltz") and pet.current() == calm
     pet._title = "Rock radio"
     pet._listen()
-    assert pet.dance_style == "sway"                       # не дёргается: пересматривает раз в 15 с
+    assert pet.dance_style == calm                         # не дёргается: пересматривает раз в 15 с
     pet._style_at -= pet_module.STYLE_EVERY_S + 1
     pet._listen()
-    assert pet.current() == "headbang"
+    assert pet.music_mood == "rock" and pet.current() in ("headbang", "airguitar")
 
 
 # --- табличка ---
@@ -456,3 +564,80 @@ def test_menu_has_sign_and_weather(pet, monkeypatch):
     pet.contextMenuEvent(Ev())
     for t in ("Табличка…", "Убрать табличку", "Погода", "Указать город…", "Одеваться по погоде", "Зонтик", "Тёмные очки"):
         assert t in titles, t
+
+
+def test_custom_item_in_saved_look_does_not_crash_start(monkeypatch, tmp_path, played):
+    """Регресс: надетая своя вещь роняла Кая (и агента) при запуске — сезонные правила знали только встроенные."""
+    QApplication.instance() or QApplication([])
+    (tmp_path / "acc").mkdir()
+    (tmp_path / "acc" / "761053_02.svg").write_text(FREEPIK_LIKE, encoding="utf-8")
+    monkeypatch.setenv("KAI_ACCESSORIES", str(tmp_path / "acc"))
+    monkeypatch.setenv("KAI_PET_STATE", str(tmp_path / "state.json"))
+    pet_module.save_state("look", {"kind": "cat", "color": "gray", "acc": ["my_761053_02"]})
+    monkeypatch.setattr(pet_module.dt if hasattr(pet_module, "dt") else pet_module.datetime, "date", Winter)
+    for name, value in (("active_window", lambda: ("", "explorer.exe")), ("active_window_rect", lambda: None),
+                        ("input_idle_s", lambda: 0.0), ("audio_peak", lambda: 0.0)):
+        monkeypatch.setattr(pet_module, name, value)
+    p = pet_module.Pet()
+    try:
+        assert p._effective()["acc"] == ["my_761053_02", "scarf"]        # зимой: колпак свой, шарф сезонный
+    finally:
+        p.shutdown()
+
+
+def test_saved_fit_redraws_worn_look_and_forgets_others(pet, monkeypatch, tmp_path):
+    folder = tmp_path / "acc"
+    folder.mkdir()
+    (folder / "head-santa.svg").write_text(FREEPIK_LIKE, encoding="utf-8")
+    monkeypatch.setattr(pet, "looks_root", lambda: tmp_path / "looks")
+    stale = tmp_path / "looks" / "fox-gray-my_santa"
+    (stale / "frames").mkdir(parents=True)                                     # другой образ с этой вещью
+    keep = tmp_path / "looks" / "fox-gray-scarf"
+    (keep / "frames").mkdir(parents=True)
+    pet.look = pet_module.normalize_look({"acc": ["my_santa"]})
+    exports = []
+    monkeypatch.setattr(pet, "_start_export", lambda look, announce: exports.append(look))
+    pet.save_fit("my_santa", {"scale": 1.4, "dy": -12})
+    assert load_state()["custom_fit"]["my_santa"]["scale"] == 1.4
+    assert exports == [pet.look] and not stale.exists() and keep.exists()
+
+
+def test_fit_goes_into_export(pet, monkeypatch, tmp_path):
+    folder = tmp_path / "acc"
+    folder.mkdir()
+    (folder / "head-santa.svg").write_text(FREEPIK_LIKE, encoding="utf-8")
+    monkeypatch.setattr(pet, "looks_root", lambda: tmp_path / "looks")
+    pet_module.save_state("custom_fit", {"my_santa": {"rot": 30}})
+    monkeypatch.setattr(pet_module.shutil, "which", lambda name: "node")
+    got = {}
+    monkeypatch.setattr(pet_module.QProcess, "start", lambda self: got.update(
+        custom=Path(self.processEnvironment().value("KAI_CUSTOM_FILE")).read_text(encoding="utf-8")))
+    look = pet_module.normalize_look({"acc": ["my_santa"]})
+    pet._start_export(look, announce=False)
+    assert "rotate(30)" in got["custom"]
+    pet._export_done(look, pet.look_dir(look).with_name("x.tmp"), 1, announce=False)
+
+
+def test_menu_offers_fit_and_dialog_saves(pet, monkeypatch, tmp_path):
+    folder = tmp_path / "acc"
+    folder.mkdir()
+    (folder / "head-santa.svg").write_text(FREEPIK_LIKE, encoding="utf-8")
+    titles = []
+    monkeypatch.setattr(pet, "_show_menu", lambda menu, pos: titles.extend(
+        a.text() for m in [menu] + [x.menu() for x in menu.actions() if x.menu()]
+        for a in m.actions() + [b for x in m.actions() if x.menu() for b in x.menu().actions()]))
+
+    class Ev:
+        def globalPos(self):
+            return QPoint(0, 0)
+    pet.contextMenuEvent(Ev())
+    assert "Подогнать свои вещи…" in titles
+    saved = []
+    monkeypatch.setattr(pet, "save_fit", lambda item, fit: saved.append((item, fit["scale"])))
+
+    def run(dlg):
+        dlg.sliders["scale"].setValue(150)
+        return True
+    monkeypatch.setattr(pet, "_run_dialog", run)
+    pet._open_fit()
+    assert saved == [("my_santa", 1.5)]                                         # сохраняется только изменённое

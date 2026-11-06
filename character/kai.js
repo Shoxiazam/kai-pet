@@ -297,6 +297,56 @@ const ANIMS = {
     p.tilt += 14 * s; p.y += 4 * down; p.earL += 18 * s; p.earR -= 18 * s;
     return p;
   } },
+  disco: { ru: 'Диско', frames: 24, fps: 24, state: 'neutral', fn: (p, t) => {
+    const s = Math.sin(TAU * t), up = (s + 1) / 2, c = Math.sin(2 * TAU * t);
+    Object.assign(p, { eyeL: 'happy', eyeR: 'happy', mouth: 'grin', mouthOpen: 0.6, blush: 0.6, spark: 0.9,
+      armL: 20 + 140 * up, armR: -40 + 30 * up, step: c, tail: 20 + 10 * s });
+    p.rot += 8 * s; p.tilt -= 8 * s; p.y -= 4 * Math.abs(c);
+    return p;
+  } },
+  hiphop: { ru: 'Хип-хоп', frames: 16, fps: 24, state: 'neutral', fn: (p, t) => {
+    const s = Math.sin(TAU * t), n = Math.abs(s);
+    Object.assign(p, { openL: 0.55, openR: 0.55, mouth: 'grin', mouthOpen: 0.2, brow: 6, arms: -62, tail: 10 + 8 * s,
+      curl: 0.3, look: [0.2, 0.2] });
+    p.y += 6 * n; p.sy *= 1 - 0.04 * n; p.tilt += 5 + 6 * n; p.earL += 6 * n; p.earR += 6 * n;
+    return p;
+  } },
+  waltz: { ru: 'Вальс', frames: 48, fps: 24, state: 'neutral', fn: (p, t) => {
+    const s = Math.sin(TAU * t), c = Math.cos(TAU * t);
+    Object.assign(p, { eyeL: 'closed', eyeR: 'closed', mouth: 'smile', blush: 0.6, armL: 95, armR: 60 + 10 * s, curl: 0.9,
+      tail: 12 + 8 * c });
+    p.rot += 6 * s; p.tilt += 6 * c; p.sx *= 0.94 + 0.06 * c; p.y -= 4 * Math.abs(Math.sin(3 * Math.PI * t));   // раз-два-три
+    return p;
+  } },
+  sadsway: { ru: 'Грустно покачивается', frames: 48, fps: 20, state: 'neutral', fn: (p, t) => {
+    const s = Math.sin(TAU * t);
+    Object.assign(p, { openL: 0.55, openR: 0.55, browL: -12, browR: -12, browLY: 2, browRY: 2, mouth: 'wavy', earL: 34, earR: 34,
+      armL: -20, armR: -20, tail: -18, curl: 0.3, blush: 0.2, spark: 0.2, look: [0, 0.4] });
+    p.rot += 4 * s; p.tilt += 6 * s; p.y += 2;
+    return p;
+  } },
+  airguitar: { ru: 'Играет на воображаемой гитаре', frames: 12, fps: 24, state: 'neutral', fn: (p, t) => {
+    const s = Math.sin(TAU * t);
+    Object.assign(p, { eyeL: 'squeeze', eyeR: 'squeeze', mouth: 'grin', mouthOpen: 0.9, browL: 8, browR: 8, armL: 45,
+      armR: -55 + 35 * s, tail: 24, curl: 0.2, step: 0.3 * s });
+    p.tilt -= 10; p.rot -= 4 + 3 * s; p.y -= 3 * Math.abs(s); p.earL -= 10; p.earR -= 10;
+    return p;
+  } },
+  clapdance: { ru: 'Хлопает над головой', frames: 24, fps: 24, state: 'neutral', fn: (p, t) => {
+    const s = Math.sin(TAU * t), c = Math.sin(2 * TAU * t);
+    Object.assign(p, { eyeL: 'happy', eyeR: 'happy', mouth: 'grin', mouthOpen: 0.7, blush: 0.7, armL: 150 + 20 * c, armR: 150 + 20 * c,
+      step: s, tail: 22 + 10 * s, spark: 1 });
+    p.y -= 5 * Math.abs(c); p.rot += 5 * s; p.tilt -= 5 * s;
+    return p;
+  } },
+  robot: { ru: 'Танец робота', frames: 25, fps: 12, state: 'neutral', fn: (p, t) => {
+    // резкие позы; последняя повторяет первую — цикл без шва
+    const P = [{ armL: 90, armR: 0, tilt: -8, look: [-0.6, 0] }, { armL: 0, armR: 90, tilt: 8, look: [0.6, 0] },
+      { armL: 90, armR: 90, tilt: 0, look: [0, -0.4], y: -6 }, { armL: -60, armR: -60, tilt: 0, look: [0, 0.3] },
+      { armL: 90, armR: 0, tilt: -8, look: [-0.6, 0] }][Math.min(4, Math.floor(t * 5))];
+    Object.assign(p, { mouth: 'flat', eyeScale: 1.05, earL: -10, earR: -10, tail: 0, curl: 0 }, P);
+    return p;
+  } },
   bed: { ru: 'Спит в кроватке', frames: 48, fps: 12, state: 'neutral', fn: (p, t) => {
     const b = Math.sin(TAU * t);
     Object.assign(p, { bed: 1, zzz: [Math.cos(TAU * t), Math.sin(TAU * t)], eyeL: 'closed', eyeR: 'closed', mouth: 'o', mouthOpen: 0.25 + 0.15 * b, blush: 0.45,

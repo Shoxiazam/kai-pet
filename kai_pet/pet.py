@@ -29,11 +29,13 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from PySide6.QtCore import (QCoreApplication, QEvent, QPoint, QProcess, QProcessEnvironment, QPropertyAnimation, QRect, QRectF,
+from PySide6.QtCore import (QByteArray, QCoreApplication, QEvent, QPoint, QProcess, QProcessEnvironment, QPropertyAnimation, QRect, QRectF,
                             Qt, QTimer, QUrl, Signal)
-from PySide6.QtGui import QAction, QColor, QCursor, QDesktopServices, QFont, QGuiApplication, QPainter, QPixmap
+from PySide6.QtGui import QAction, QColor, QCursor, QDesktopServices, QFont, QGuiApplication, QImage, QPainter, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QInputDialog, QMenu, QWidget
 
 from . import commands, sounds
@@ -56,10 +58,25 @@ EAR_MS = 100           # громкость — 10 раз в секунду: х�
 MUSIC_SAMPLES, MUSIC_NEED = 32, 24         # 32 замера (3,2 с): из них 24 громких — это музыка, а не «дзынь»
 STYLE_WINDOW = 100      # 10 с громкости — по ним выбирается танец
 STYLE_EVERY_S = 15      # танец пересматривается не чаще, чтобы не дёргался
-DANCES = {"sway": "покачиваюсь", "groove": "киваю", "bounce": "прыгаю", "headbang": "качаю головой"}
-_ROCK = re.compile(r"\b(?:rock|metal\w*|punk|grunge|рок|метал\w*|панк)\b")
-_CALM = re.compile(r"lo-?fi|chill|piano|jazz|ambient|sleep|relax|acoustic|classical|колыбел|спокойн|медитац|пианино|джаз")
-_FAST = re.compile(r"\b(?:edm|techno|house|dance|phonk|drum|dnb|trap|club|remix|hardstyle)\b|танцев|клубн|фонк")
+# Настроение музыки → танцы; внутри настроения танцы сменяются, чтобы не надоедало.
+MUSIC_MOODS = {
+    "sad": ("sadsway",), "calm": ("sway", "waltz"), "classical": ("waltz", "sway"),
+    "rock": ("headbang", "airguitar"), "hiphop": ("hiphop", "groove"), "electronic": ("robot", "bounce"),
+    "happy": ("disco", "clapdance", "dance"), "energetic": ("bounce", "disco"), "normal": ("groove", "clapdance", "hiphop"),
+}
+DANCES = {d for ds in MUSIC_MOODS.values() for d in ds}
+# Слова в названии трека, по порядку: «sad piano» — грустная, а не спокойная.
+_MOOD_WORDS = [
+    ("sad", r"\bsad\b|грустн|печальн|slowed|tears|alone|lonely|одиноч|депресс|melanchol|разбит|плачу|слёз|слез"),
+    ("rock", r"\b(?:rock|metal\w*|punk|grunge|рок|метал\w*|панк)\b"),
+    ("hiphop", r"\b(?:rap|hip[- ]?hop|drill|trap)\b|рэп|\bреп\b|хип[- ]?хоп"),
+    ("classical", r"classical|waltz|orchestra|symphon|вальс|оркестр|симфон|классическ|моцарт|бетховен|чайковск"),
+    ("calm", r"lo-?fi|chill|piano|jazz|ambient|sleep|relax|acoustic|колыбел|спокойн|медитац|пианино|джаз"),
+    ("electronic", r"\b(?:techno|house|edm|electro\w*|dubstep|trance|synth\w*)\b|техно|электрон"),
+    ("happy", r"\b(?:disco|funk|pop|party|summer|happy)\b|диско|вечеринк|весел|весёл|\bлето\b|летн"),
+    ("energetic", r"\b(?:dance|phonk|drum|dnb|club|remix|hardstyle|workout)\b|танцев|клубн|фонк|тренировк"),
+]
+_MOOD_RX = [(m, re.compile(rx)) for m, rx in _MOOD_WORDS]
 SIGN_RECT = (44, 194, 168, 42)   # где писать на табличке: x, y, ширина, высота в кадре 256 (character/kai.js, SIGN)
 SIGN_MAX = 60
 NEWEST_ANIM = "sign"    # в образе нет этих кадров — нарисован старой версией, перерисовать
@@ -81,7 +98,14 @@ ACCESSORIES = {"scarf": ("Шарфик", "neck"), "hat": ("Шапочка", "hea
                "sunglasses": ("Тёмные очки", "face"), "umbrella": ("Зонтик", "hand")}
 DEFAULT_LOOK = {"kind": "cat", "color": "gray", "acc": []}
 SLOTS = ("head", "neck", "face", "hand")
-CUSTOM_MAX_BYTES = 200_000   # своя вещь — картинка, а не фотоальбом
+CUSTOM_MAX_BYTES = 2_000_000  # своя вещь — картинка, а не фотоальбом
+# Куда ставить скачанную вещь в кадре 256: x, y, ширина, высота, выравнивание (шапка садится на макушку).
+SLOT_BOX = {"head": (68, 34, 120, 92, "xMidYMax"), "neck": (66, 166, 124, 44, "xMidYMid"),
+            "face": (76, 124, 104, 56, "xMidYMid"), "hand": (164, 140, 84, 92, "xMidYMid")}
+SVG_NS, XLINK_NS = "http://www.w3.org/2000/svg", "http://www.w3.org/1999/xlink"
+_BG_ID = re.compile(r"^(?:background|bg|фон)", re.I)
+_SHAPES = {"path", "rect", "circle", "ellipse", "polygon", "polyline", "line", "text", "image", "use"}
+DEFAULT_FIT = {"scale": 1.0, "dx": 0.0, "dy": 0.0, "rot": 0.0, "mirror": False}   # своя подгонка вещи
 CHASE_COOLDOWN_S = 6    # охотится за курсором не чаще
 CHASE_RADIUS = 500      # трясти мышкой надо рядом с Каем
 CHASE_STEP = 220        # на сколько пикселей подбегает (только если сидит «где оставлю»)
@@ -283,27 +307,31 @@ def tempo_bpm(levels, hz: int = 10) -> float | None:
     return 60 * hz / lag_best if lag_best else None
 
 
-def music_style(levels, title: str = "") -> str:
-    """Какой танец: по названию трека (рок, lofi, phonk…), иначе по темпу и силе звука."""
+def music_mood(levels, title: str = "") -> str:
+    """Настроение музыки: по словам в названии трека, иначе по темпу и силе звука (грусть по звуку не угадать)."""
     t = title.lower()
-    if _ROCK.search(t):
-        return "headbang"
-    if _CALM.search(t):
-        return "sway"
-    if _FAST.search(t):
-        return "bounce"
+    for mood, rx in _MOOD_RX:
+        if rx.search(t):
+            return mood
     if len(levels) < 40:
-        return "groove"
+        return "normal"
     mean = sum(levels) / len(levels)
     if mean <= 0:
-        return "groove"
+        return "normal"
     cv = (sum((v - mean) ** 2 for v in levels) / len(levels)) ** 0.5 / mean   # насколько звук «скачет»
     bpm = tempo_bpm(levels)
     if (bpm and bpm >= 125) or cv >= 0.6:
-        return "bounce"
+        return "energetic"
     if cv <= 0.25 or (bpm and bpm <= 80 and cv < 0.4):
-        return "sway"
-    return "groove"
+        return "calm"
+    return "normal"
+
+
+def dance_for(mood: str, previous: str = "") -> str:
+    """Танец под настроение; если вариантов несколько — не тот же, что сейчас."""
+    options = MUSIC_MOODS.get(mood, MUSIC_MOODS["normal"])
+    fresh = [d for d in options if d != previous] or list(options)
+    return random.choice(fresh)
 
 
 def weather_items(temp: float, code: int) -> list[str]:
@@ -427,6 +455,143 @@ def custom_accessories(folder: Path | None = None) -> dict[str, tuple[str, str, 
     return found
 
 
+def _viewbox(root) -> tuple[float, float, float, float] | None:
+    try:
+        if root.get("viewBox"):
+            x, y, w, h = (float(v) for v in re.split(r"[\s,]+", root.get("viewBox").strip()))
+        else:
+            x = y = 0.0
+            w, h = (float(re.sub(r"[^\d.]", "", root.get(k, ""))) for k in ("width", "height"))
+    except ValueError:
+        return None
+    return (x, y, w, h) if w > 0 and h > 0 else None
+
+
+def _strip_background(root, vb) -> None:
+    """Убрать фон: слой с id «background»/«bg» и прямоугольники на весь холст."""
+    parents = {child: parent for parent in root.iter() for child in parent}
+    for el in list(root.iter()):
+        tag = el.tag.rsplit("}", 1)[-1]
+        full = False
+        if tag == "rect":
+            try:
+                w, h = (float(re.sub(r"[^\d.]", "", el.get(k, "0")) or 0) for k in ("width", "height"))
+                full = w >= vb[2] * 0.95 and h >= vb[3] * 0.95
+            except ValueError:
+                pass
+        if (full or _BG_ID.match(el.get("id", ""))) and el in parents:
+            parents[el].remove(el)
+
+
+def _content_box(svg_text: str, vb) -> tuple[float, float, float, float]:
+    """Где сам рисунок: самое большое связное пятно (без подписи «designed by…» в углу), в координатах viewBox."""
+    renderer = QSvgRenderer(QByteArray(svg_text.encode("utf-8")))
+    if not renderer.isValid():
+        return vb
+    n = 128
+    img = QImage(n, n, QImage.Format_ARGB32)
+    img.fill(Qt.transparent)
+    painter = QPainter(img)
+    renderer.render(painter)                   # растягивает viewBox на всё изображение — пересчёт линейный
+    painter.end()
+    ink = {(x, y) for y in range(n) for x in range(n) if img.pixelColor(x, y).alpha() > 24}
+    if not ink:
+        return vb
+    grow = {(x + dx, y + dy) for x, y in ink for dx in (-2, 0, 2) for dy in (-2, 0, 2)}   # склеить детали рисунка
+    best: set = set()
+    seen: set = set()
+    for start in grow:
+        if start in seen:
+            continue
+        blob, todo = set(), [start]
+        seen.add(start)
+        while todo:
+            x, y = todo.pop()
+            blob.add((x, y))
+            for nb in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                if nb in grow and nb not in seen:
+                    seen.add(nb)
+                    todo.append(nb)
+        if len(blob & ink) > len(best & ink):
+            best = blob
+    pts = best & ink
+    x0, x1 = min(p[0] for p in pts), max(p[0] for p in pts) + 1
+    y0, y1 = min(p[1] for p in pts), max(p[1] for p in pts) + 1
+    sx, sy = vb[2] / n, vb[3] / n
+    return vb[0] + x0 * sx, vb[1] + y0 * sy, (x1 - x0) * sx, (y1 - y0) * sy
+
+
+def _drop_outside(root, box) -> None:
+    """Убрать то, что вне рисунка (подпись «designed by…», логотипы): по границам каждой фигуры."""
+    shapes = [el for el in root.iter() if el.tag.rsplit("}", 1)[-1] in _SHAPES]
+    tagged = []
+    for i, el in enumerate(shapes):
+        if not el.get("id"):
+            el.set("id", f"kaifit{i}")
+            tagged.append(el)
+    renderer = QSvgRenderer(QByteArray(ET.tostring(root, encoding="unicode").encode("utf-8")))
+    keep = QRectF(*box)
+    if renderer.isValid():
+        parents = {child: parent for parent in root.iter() for child in parent}
+        for el in shapes:
+            sid = el.get("id")
+            bounds = renderer.transformForElement(sid).mapRect(renderer.boundsOnElement(sid))
+            if not bounds.isEmpty() and not bounds.intersects(keep) and el in parents:
+                parents[el].remove(el)
+    for el in tagged:
+        el.attrib.pop("id", None)
+
+
+def fit_svg(text: str, slot: str) -> str:
+    """Скачанная картинка → SVG-фрагмент вещи Кая (кадр 256×256): без фона и подписей, уменьшена и поставлена
+    на своё место. Рисунок в координатах Кая (viewBox 0 0 256 256) ставится как есть. "" — это не SVG."""
+    ET.register_namespace("", SVG_NS)
+    ET.register_namespace("xlink", XLINK_NS)
+    try:
+        root = ET.fromstring(text.encode("utf-8"))
+    except ET.ParseError as e:
+        log.warning("Своя вещь — не SVG: %s", e)
+        return ""
+    vb = _viewbox(root)
+    if vb is None or vb == (0.0, 0.0, 256.0, 256.0):
+        return "".join(ET.tostring(child, encoding="unicode") for child in root)
+    _strip_background(root, vb)
+    box = _content_box(ET.tostring(root, encoding="unicode"), vb)
+    _drop_outside(root, box)
+    bx, by, bw, bh = box
+    x, y, w, h, align = SLOT_BOX.get(slot, SLOT_BOX["head"])
+    k = min(w / bw, h / bh)                    # вписать в место вещи, не искажая
+    ox = x + (w - bw * k) / 2 - bx * k
+    oy = y + (h - bh * k) * (1.0 if align.endswith("YMax") else 0.5) - by * k
+    inner = "".join(ET.tostring(child, encoding="unicode") for child in root)
+    return f'<g transform="translate({ox:.2f} {oy:.2f}) scale({k:.5f})">{inner}</g>'
+
+
+def normalize_fit(fit) -> dict:
+    """Подгонка вещи: размер 0,3..2,5, сдвиг ±100, поворот ±180°, отражение."""
+    fit = fit if isinstance(fit, dict) else {}
+    out = dict(DEFAULT_FIT)
+    for key, lo, hi in (("scale", 0.3, 2.5), ("dx", -100, 100), ("dy", -100, 100), ("rot", -180, 180)):
+        try:
+            out[key] = max(lo, min(hi, float(fit.get(key, out[key]))))
+        except (TypeError, ValueError):
+            pass
+    out["mirror"] = bool(fit.get("mirror", False))
+    return out
+
+
+def place_fragment(fragment: str, slot: str, fit) -> str:
+    """Своя подгонка вокруг центра места вещи: сдвиг, поворот, размер, отражение."""
+    fit = normalize_fit(fit)
+    if not fragment or fit == DEFAULT_FIT:
+        return fragment
+    x, y, w, h, _align = SLOT_BOX.get(slot, SLOT_BOX["head"])
+    cx, cy = x + w / 2, y + h / 2
+    sx = -fit["scale"] if fit["mirror"] else fit["scale"]
+    return (f'<g transform="translate({cx + fit["dx"]:g} {cy + fit["dy"]:g}) rotate({fit["rot"]:g}) '
+            f'scale({sx:g} {fit["scale"]:g}) translate({-cx:g} {-cy:g})">{fragment}</g>')
+
+
 def all_accessories() -> dict[str, tuple[str, str]]:
     return {**ACCESSORIES, **{k: (ru, slot) for k, (ru, slot, _f) in custom_accessories().items()}}
 
@@ -504,7 +669,8 @@ def effective_look(chosen: dict, day: datetime.date, birthday: str = "", seasona
         extra += weather                       # погода знает лучше календаря
     elif season_key(day) and winter_off != season_key(day):
         extra += ["hat", "scarf"]
-    taken = {ACCESSORIES[a][1] for a in look["acc"]}
+    known = all_accessories()                  # в образе могут быть и свои вещи из папки
+    taken = {known[a][1] for a in look["acc"] if a in known}
     for item in extra:
         if ACCESSORIES[item][1] not in taken:
             look["acc"].append(item)
@@ -553,7 +719,7 @@ class Pet(QWidget):
         self.seasonal = bool(state.get("seasonal", self.cfg.seasonal))
         self.chase_on = bool(state.get("chase", True))
         self._levels: collections.deque = collections.deque(maxlen=STYLE_WINDOW)   # громкость для выбора танца
-        self.dance_style, self._style_at, self._title = "groove", 0.0, ""
+        self.dance_style, self.music_mood, self._style_at, self._title = "groove", "normal", 0.0, ""
         self.sign_text = " ".join(str(state.get("sign", "")).split())[:SIGN_MAX]
         self.weather_on = bool(state.get("weather", True))
         self.city = str(state.get("city", ""))
@@ -709,18 +875,23 @@ class Pet(QWidget):
             if item in mine:
                 _ru, slot, file = mine[item]
                 try:
-                    if file.stat().st_size <= CUSTOM_MAX_BYTES:
-                        custom[item] = {"slot": slot, "svg": file.read_text(encoding="utf-8", errors="replace")}
+                    svg = place_fragment(self._fragment(item, mine), slot, self.custom_fits().get(item))
+                    if svg:
+                        custom[item] = {"slot": slot, "svg": svg}
                 except OSError as e:
                     log.warning("Своя вещь %s не прочитана: %s", file, e)
+        custom_file = tmp.with_name(look_id(look) + ".custom.json")
         if custom:
-            # shortcut: готовый образ кэшируется по имени вещи; поправили SVG — переименуйте файл
-            env.insert("KAI_CUSTOM", json.dumps(custom))
+            # shortcut: образ кэшируется по имени вещи; заменили сам SVG — переименуйте файл (подгонка пересчитает)
+            custom_file.write_text(json.dumps(custom), encoding="utf-8")
+            env.insert("KAI_CUSTOM_FILE", str(custom_file))
         proc = QProcess(self)
         proc.setProcessEnvironment(env)
         proc.setProgram(node)
         proc.setArguments([str(script)])
         proc.finished.connect(lambda code, _status: self._export_done(look, tmp, code, announce))
+        # node не запустился — finished не придёт; без этого Кай «переодевался» бы вечно
+        proc.errorOccurred.connect(lambda err: err == QProcess.FailedToStart and self._export_done(look, tmp, -1, announce))
         self._export, self._export_look = proc, look
         QTimer.singleShot(EXPORT_TIMEOUT_MS, lambda: proc.state() != QProcess.NotRunning and proc.kill())
         proc.start()
@@ -728,6 +899,9 @@ class Pet(QWidget):
             self.bubble.say("Переодеваюсь… минутку", 25000)
 
     def _export_done(self, look: dict, tmp: Path, code: int, announce: bool) -> None:
+        if self._export is None:                # уже обработано (ошибка запуска и конец процесса)
+            return
+        tmp.with_name(look_id(look) + ".custom.json").unlink(missing_ok=True)
         proc, self._export, self._export_look = self._export, None, None
         if proc is not None:
             proc.deleteLater()
@@ -818,7 +992,8 @@ class Pet(QWidget):
             self._style_at = 0.0
         elif time.monotonic() - self._style_at > STYLE_EVERY_S:
             self._style_at = time.monotonic()
-            self.dance_style = music_style(list(self._levels), self._title)
+            self.music_mood = music_mood(list(self._levels), self._title)
+            self.dance_style = dance_for(self.music_mood, self.dance_style)
 
     # --- API: подключение к своему ассистенту ---
     def set_status(self, status: str) -> None:
@@ -1268,6 +1443,8 @@ class Pet(QWidget):
             action.triggered.connect(lambda on, n=name: self.change_look({"wear": n} if on else {"remove": n}))
         things.addSeparator()
         things.addAction("Свои вещи (папка)…").triggered.connect(lambda _c=False: self.open_accessories())
+        if custom_accessories():
+            things.addAction("Подогнать свои вещи…").triggered.connect(lambda _c=False: self._open_fit())
         dress.addSeparator()
         dress.addAction("Удиви меня").triggered.connect(lambda _c=False: self.change_look({"random": True}))
         dress.addAction("Как было").triggered.connect(lambda _c=False: self.change_look({"reset": True}))
@@ -1299,6 +1476,67 @@ class Pet(QWidget):
         menu.addAction(self.friendship_text()).setEnabled(False)
         menu.addAction("Выход").triggered.connect(lambda _c=False: self.quit_requested.emit())
         self._show_menu(menu, e.globalPos())
+
+    # --- подгонка своих вещей ---
+    def custom_fits(self) -> dict:
+        fits = load_state().get("custom_fit")
+        return dict(fits) if isinstance(fits, dict) else {}
+
+    def _fragment(self, item: str, mine: dict) -> str:
+        """Вещь из папки, вписанная в своё место (без вашей подгонки)."""
+        _ru, slot, file = mine[item]
+        try:
+            if file.stat().st_size > CUSTOM_MAX_BYTES:
+                log.warning("Своя вещь %s больше %s байт — пропускаю", file, CUSTOM_MAX_BYTES)
+                return ""
+            return fit_svg(file.read_text(encoding="utf-8", errors="replace"), slot)
+        except OSError as e:
+            log.warning("Своя вещь %s не прочитана: %s", file, e)
+            return ""
+
+    def save_fit(self, item: str, fit: dict) -> None:
+        """Запомнить подгонку и перерисовать: надетый образ — сейчас, остальные с этой вещью — когда наденут."""
+        fits = self.custom_fits()
+        fits[item] = normalize_fit(fit)
+        save_state("custom_fit", fits)
+        root = self.looks_root()
+        for d in (root.iterdir() if root.is_dir() else []):
+            if d.is_dir() and d != self.dir and item in d.name.split("-", 2)[-1].split("+"):
+                shutil.rmtree(d, ignore_errors=True)
+        if item in self.look["acc"]:
+            if self._export is None:
+                self._start_export(self.look, announce=True)
+            else:
+                self.bubble.say("Подгонку запомнил — применю, как только допереодеваюсь.", 6000)
+
+    def _preview_base(self) -> QImage:
+        """Кай в нынешнем образе, но без своих вещей — на нём примеряем."""
+        plain = {**self.look, "acc": [a for a in self.look["acc"] if a in ACCESSORIES]}
+        file = self.look_dir(plain) / "look" / "center.png"
+        return QImage(str(file if file.is_file() else self.base / "look" / "center.png"))
+
+    def _open_fit(self) -> None:
+        from .fit_dialog import FitDialog
+        mine = custom_accessories()
+        if not mine:
+            return
+        cache: dict[str, str] = {}
+
+        def fragment(item: str, fit: dict) -> str:
+            if item not in cache:
+                cache[item] = self._fragment(item, mine)
+            return place_fragment(cache[item], mine[item][1], fit)
+        worn = next((a for a in self.look["acc"] if a in mine), None)
+        dlg = FitDialog([(k, name, slot) for k, (name, slot, _f) in mine.items()], fragment, self.custom_fits(),
+                        self._preview_base(), DEFAULT_FIT, first=worn)
+        if self._run_dialog(dlg):
+            before = self.custom_fits()
+            for item, fit in dlg.fits.items():
+                if normalize_fit(fit) != normalize_fit(before.get(item)):
+                    self.save_fit(item, fit)
+
+    def _run_dialog(self, dlg) -> bool:
+        return bool(dlg.exec())
 
     def open_accessories(self) -> None:
         """Открыть папку своих вещей; новые SVG появляются в «Аксессуарах» без перезапуска."""

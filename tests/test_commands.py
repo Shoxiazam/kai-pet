@@ -26,7 +26,7 @@ def test_greetings_and_goodbyes(text, anim, say):
     ("попрощайся", "bye"), ("пока", "bye"), ("поздоровайся", "wave"),
     ("покажи сердечко", "heart"), ("Кай, сделай сердечко", "heart"), ("люблю тебя", "heart"),
     ("покажи лайк", "like"), ("покажи класс", "like"), ("покажи большой палец", "like"),
-    ("станцуй", "dance"), ("покажи танец", "dance"), ("прыгни", "jump"), ("обними меня", "hug"),
+    ("прыгни", "jump"), ("обними меня", "hug"),
     ("поклонись", "bow"), ("похлопай", "clap"), ("помаши", "wave"), ("подмигни", "playful"),
     ("удивись", "surprised"), ("обрадуйся", "excited"), ("поворчи", "grumpy"), ("иди спать", "bed"),
     ("похвали меня", "proud"), ("задумайся", "confused"), ("успокойся", "calm"),
@@ -37,8 +37,15 @@ def test_gestures_and_emotions(text, anim):
 
 
 def test_any_gesture_picks_a_real_one():
+    from kai_pet.commands import PARTY_DANCES
     for _ in range(20):
-        assert parse("покажи какой-нибудь жест").anim in ("heart", "like", "clap", "dance")
+        assert parse("покажи какой-нибудь жест").anim in ("heart", "like", "clap", *PARTY_DANCES)
+
+
+def test_dance_command_varies():
+    from kai_pet.commands import PARTY_DANCES
+    seen = {parse("станцуй").anim for _ in range(60)} | {parse("покажи танец").anim for _ in range(60)}
+    assert seen <= set(PARTY_DANCES) and len(seen) >= 4                  # каждый раз другой танец
 
 
 @pytest.mark.parametrize("text", [
