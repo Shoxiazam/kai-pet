@@ -25,11 +25,11 @@ const PALETTES = {
 const COLOR_NAMES = { gray: 'Серый', ginger: 'Рыжий', graphite: 'Графитовый', terracotta: 'Терракотовый',
   sky: 'Голубой', mint: 'Мятный', lilac: 'Сиреневый', rose: 'Розовый' };
 const KINDS = { cat: 'Котик', fox: 'Лисёнок', bunny: 'Зайка', bear: 'Мишка' };
-// slot: на голове одна вещь, очки и шарф — к чему угодно
+// slot: на одном месте одна вещь (шапка/корона/венок — head), остальное сочетается: бантик, наушники, шарф с бабочкой
 const ACCESSORIES = { scarf: { ru: 'Шарфик', slot: 'neck' }, hat: { ru: 'Шапочка', slot: 'head' },
-  glasses: { ru: 'Очки', slot: 'face' }, headphones: { ru: 'Наушники', slot: 'head' }, crown: { ru: 'Корона', slot: 'head' },
+  glasses: { ru: 'Очки', slot: 'face' }, headphones: { ru: 'Наушники', slot: 'ears' }, crown: { ru: 'Корона', slot: 'head' },
   sunglasses: { ru: 'Тёмные очки', slot: 'face' }, umbrella: { ru: 'Зонтик', slot: 'hand' },
-  bow: { ru: 'Бантик', slot: 'head' }, bowtie: { ru: 'Бабочка', slot: 'neck' }, flowers: { ru: 'Венок', slot: 'head' } };
+  bow: { ru: 'Бантик', slot: 'hair' }, bowtie: { ru: 'Бабочка', slot: 'chest' }, flowers: { ru: 'Венок', slot: 'head' } };
 // Одежда (slot body): ткань по низу тела, под мордочкой. top — где начинается ворот.
 const CLOTHES = {
   tshirt: { ru: 'Футболка', color: '#E05A47', top: 184 }, hoodie: { ru: 'Худи', color: '#7C6CF2', top: 180 },
@@ -42,7 +42,7 @@ const COSTUMES = {
   shark: { ru: 'Акулёнок', color: '#7FA6C4', belly: '#F4F1EA' }, dino: { ru: 'Динозаврик', color: '#7DBF6A', belly: '#E8F3C8' },
   bee: { ru: 'Пчёлка', color: '#F2C14E', belly: '#F2C14E' }, frog: { ru: 'Лягушонок', color: '#79B85A', belly: '#E3F1C6' },
 };
-for (const k in CLOTHES) ACCESSORIES[k] = { ru: CLOTHES[k].ru, slot: 'body' };
+for (const k in CLOTHES) ACCESSORIES[k] = { ru: CLOTHES[k].ru, slot: k === 'cape' ? 'back' : 'body' };
 for (const k in COSTUMES) ACCESSORIES[k] = { ru: COSTUMES[k].ru, slot: 'costume' };
 // Свои вещи из папки accessories питомца: { id: { slot: 'head' | 'neck' | 'face', svg: '<svg viewBox="0 0 256 256">…' } }
 const CUSTOM = {};
@@ -595,7 +595,7 @@ function svg(pose, opt = {}) {
   const scarf = wear.has('scarf') ? `<g id="acc-scarf" style="fill:${ACC_COLOR.scarf};stroke:${ink};stroke-width:4;stroke-linejoin:round">` +
     `<path d="M160,192 L172,228 L186,223 L178,188 Z"/><path d="M68,178 Q128,197 188,178 L190,188 Q128,207 66,188 Z"/>` +
     `<path d="M80,185 Q128,201 176,185" style="fill:none;stroke:${cream};stroke-width:2.5;opacity:.7"/></g>` : '';
-  let head = '';
+  let head = '', bow = '', phones = '';
   if (wear.has('hat')) head = `<g id="acc-hat" style="stroke:${ink};stroke-width:4;stroke-linejoin:round">` +
     `<path d="M90,124 Q92,82 128,80 Q164,82 166,124 Z" style="fill:${ACC_COLOR.hat}"/>` +
     `<path d="M86,118 Q128,108 170,118 L170,129 Q128,119 86,129 Z" style="fill:${cream}"/>` +
@@ -603,16 +603,17 @@ function svg(pose, opt = {}) {
   else if (wear.has('crown')) head = `<g id="acc-crown" style="stroke:${ink};stroke-width:4;stroke-linejoin:round">` +
     `<path d="M106,112 L106,92 L117,102 L128,86 L139,102 L150,92 L150,112 Z" style="fill:${ACC_COLOR.crown}"/>` +
     `<circle cx="128" cy="104" r="3" style="fill:${blush};stroke-width:1.5"/></g>`;
-  else if (wear.has('bow')) head = `<g id="acc-bow" style="fill:${ACC_COLOR.bow};stroke:${ink};stroke-width:4;stroke-linejoin:round">` +
+  if (wear.has('bow')) bow = `<g id="acc-bow" style="fill:${ACC_COLOR.bow};stroke:${ink};stroke-width:4;stroke-linejoin:round">` +
     `<path d="M152,96 L134,82 L136,110 Z"/><path d="M152,96 L170,82 L168,110 Z"/><circle cx="152" cy="96" r="6"/></g>`;
-  else if (wear.has('flowers')) head = `<g id="acc-flowers" style="stroke:${ink};stroke-width:2.5">` +
+  if (!head && wear.has('flowers')) head = `<g id="acc-flowers" style="stroke:${ink};stroke-width:2.5">` +
     [[92, 110], [110, 100], [128, 97], [146, 100], [164, 110]].map(([x, y]) =>
       [0, 72, 144, 216, 288].map(a => `<circle cx="${f(x + 6 * Math.cos(a * Math.PI / 180))}" cy="${f(y + 6 * Math.sin(a * Math.PI / 180))}" r="4.6" style="fill:${ACC_COLOR.petal}"/>`).join('') +
       `<circle cx="${x}" cy="${y}" r="3.6" style="fill:${ACC_COLOR.bloom}"/>`).join('') + '</g>';
-  else if (wear.has('headphones')) head = `<g id="acc-headphones">` +
+  if (wear.has('headphones')) phones = `<g id="acc-headphones">` +
     `<path d="M70,150 C66,96 98,78 128,78 C158,78 190,96 186,150" style="${outline(11)}"/>` +
     `<path d="M70,150 C66,96 98,78 128,78 C158,78 190,96 186,150" style="fill:none;stroke:${ACC_COLOR.phones};stroke-width:5;stroke-linecap:round"/>` +
     `<g style="fill:${ACC_COLOR.cups};stroke:${ink};stroke-width:4"><ellipse cx="66" cy="156" rx="11" ry="18"/><ellipse cx="190" cy="156" rx="11" ry="18"/></g></g>`;
+  head += phones + bow;                                   // бантик и наушники — поверх шапки
   const hat = head ? `<g id="acc-head" transform="${tilt}">${head}</g>` : '';
   const mine = [...wear].filter(a => CUSTOM[a]).map(a => `<g id="acc-${a}"${CUSTOM[a].slot === 'neck' ? '' : ` transform="${tilt}"`}>` +
     String(CUSTOM[a].svg).replace(/<\?xml[^>]*>/, '') + '</g>').join('');
@@ -647,7 +648,8 @@ function svg(pose, opt = {}) {
     `<path d="M128,62 Q138,14 190,12 Q242,14 252,62 Q237,52 221,62 Q206,52 190,62 Q174,52 159,62 Q143,52 128,62 Z" style="fill:${ACC_COLOR.umbrella}"/></g>` : '';
 
   // ── Одежда и костюмы
-  const outfitKey = [...wear].find(a => CLOTHES[a]), costumeKey = [...wear].find(a => COSTUMES[a]);
+  const costumeKey = [...wear].find(a => COSTUMES[a]), outfitKey = [...wear].find(a => CLOTHES[a] && a !== 'cape');
+  const cape = wear.has('cape') && !costumeKey;           // плащ надевается поверх любой одежды
   const inBody = inner => `<g clip-path="url(#${id}-body)">${inner}</g>`;     // ткань не вылезает за контур тела
   const reline = `<path d="${BODY}" style="${outline(OUT)}"/>`;              // контур тела поверх ткани
   let clothes = '', back = '', hood = '';
@@ -690,11 +692,7 @@ function svg(pose, opt = {}) {
       `${top}</g>`;
   } else if (outfitKey) {
     const C = CLOTHES[outfitKey], t = C.top;
-    if (outfitKey === 'cape') {
-      back = `<path d="M84,168 Q30,214 44,242 L212,242 Q226,214 172,168 Z" style="fill:${C.color};stroke:${ink};stroke-width:4;stroke-linejoin:round"/>`;
-      clothes = `<path d="M92,178 Q128,192 164,178" style="fill:none;stroke:${C.color};stroke-width:6;stroke-linecap:round"/>` +
-        `<circle cx="128" cy="187" r="6" style="fill:#F2C14E;stroke:${ink};stroke-width:2.5"/>`;
-    } else {
+    {
       let d = '';
       if (outfitKey === 'tshirt') d = `<path d="M108,${t} Q128,${t + 12} 148,${t}" style="fill:none;stroke:${ink};stroke-width:3"/>` +
         `<path d="M128,${t + 30} m-7,0 a4.5,4.5 0 0,1 7,-3 a4.5,4.5 0 0,1 7,3 q0,5 -7,10 q-7,-5 -7,-10 z" style="fill:#FFFFFF;opacity:.85"/>`;
@@ -717,13 +715,19 @@ function svg(pose, opt = {}) {
   }
   const dressed = outfitKey || costumeKey;
   if (dressed) clothes = `<g id="acc-${dressed}">${clothes}</g>`;
+  if (cape) {
+    const c = CLOTHES.cape.color;
+    back = `<path id="acc-cape-back" d="M84,168 Q30,214 44,242 L212,242 Q226,214 172,168 Z" style="fill:${c};stroke:${ink};stroke-width:4;stroke-linejoin:round"/>`;
+    clothes += `<g id="acc-cape"><path d="M92,178 Q128,192 164,178" style="fill:none;stroke:${c};stroke-width:6;stroke-linecap:round"/>` +
+      `<circle cx="128" cy="187" r="6" style="fill:#F2C14E;stroke:${ink};stroke-width:2.5"/></g>`;
+  }
 
   const flip = p.facing < 0 ? 'translate(256 0) scale(-1 1) ' : '';
   const T = `${flip}translate(0 ${f(p.y)}) rotate(${f(p.rot)} 128 228) translate(128 228) scale(${f(p.sx)} ${f(p.sy)}) translate(-128 -228)`;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}" width="${size}" height="${size}">` +
     `<defs><clipPath id="${id}-ear"><path d="${E.out}"/></clipPath><clipPath id="${id}-body"><path d="${BODY}"/></clipPath></defs>` +
     `${bedBack}<g id="kai" transform="${T}">${back}${costumeKey ? '' : tail}${costumeKey ? '' : `<g id="ears" transform="${tilt}">${ear(-1)}${ear(1)}</g>`}` +
-    `${body}${dressed ? '' : spark}${clothes}${hood}${scarf}${bowtie}${feet}${umbrella}${arm(-1)}${arm(1)}${blanket}${heart}${face}${treat}${costumeKey ? '' : hat}${mine}</g>${bedBase}${zzz}${sign}</svg>`;
+    `${body}${dressed || cape ? '' : spark}${clothes}${hood}${scarf}${bowtie}${feet}${umbrella}${arm(-1)}${arm(1)}${blanket}${heart}${face}${treat}${costumeKey ? '' : hat}${mine}</g>${bedBase}${zzz}${sign}</svg>`;
 }
 
 // ── Публичный API

@@ -46,6 +46,7 @@ def pet(monkeypatch, tmp_path, played):
     monkeypatch.setattr(pet_module, "cpu_load", lambda: None)
     monkeypatch.setenv("KAI_PET_USAGE", str(tmp_path / "usage.json"))
     pet_module.save_state("morning_day", __import__("datetime").date.today().isoformat())   # уже здоровался
+    pet_module.save_state("report_day", __import__("datetime").date.today().isoformat())   # вечерний отчёт уже был
     monkeypatch.setattr(pet_module, "audible_apps", lambda: {"spotify.exe"})     # звучит музыкальная программа
     monkeypatch.setattr(pet_module, "window_at", lambda x, y, skip: None)      # под Каем — рабочий стол
     monkeypatch.setattr(pet_module, "background_mood", lambda app, *_: app or "idle")
@@ -265,7 +266,7 @@ def test_custom_accessories(tmp_path, monkeypatch):
     assert ids["галстук"][1] == "neck" and ids["звезда"][1] == "head"
     assert all(k.startswith("my_") and k.isascii() for k in mine)          # имя папки образа — латиница
     look = pet_module.normalize_look({"acc": ["my_bow", "hat", "scarf", ids["галстук"][0]]})
-    assert look["acc"] == sorted(["hat", ids["галстук"][0]])             # на голове и шее — по одной вещи
+    assert look["acc"] == sorted(["my_bow", "hat", "scarf", ids["галстук"][0]])   # свои вещи сочетаются со всем
     (folder / "head-bow.svg").unlink()
     assert pet_module.normalize_look({"acc": ["my_bow"]})["acc"] == []    # файл убрали — вещь пропала
 
@@ -874,6 +875,7 @@ def test_usage_keeps_a_week_and_reports_once_in_the_evening(pet, monkeypatch, tm
         def now(cls, tz=None):
             return cls(2026, 11, 6, 21, 30)
     monkeypatch.setattr(pet_module.datetime, "datetime", Evening)
+    pet_module.save_state("report_day", "")                          # фикстура уже отметила отчёт
     pet._care(time.monotonic(), 0.0, "code.exe")
     assert "Сегодня" in pet.bubble.text.text()
     pet.bubble.hide()
@@ -1041,7 +1043,7 @@ def test_costume_replaces_hat_and_clothes_last_wins():
     assert n({"acc": ["shark", "glasses", "scarf"]})["acc"] == ["glasses", "scarf", "shark"]   # очки и шарф — можно
     assert n({"acc": ["hoodie", "tuxedo"]})["acc"] == ["tuxedo"]                    # одна одежда за раз
     assert n({"acc": ["hoodie", "crown"]})["acc"] == ["crown", "hoodie"]
-    assert len([k for k, (_ru, slot) in pet_module.ACCESSORIES.items() if slot in ("body", "costume")]) == 12
+    assert len([k for k, (_ru, slot) in pet_module.ACCESSORIES.items() if slot in ("body", "back", "costume")]) == 12
 
 
 def test_wardrobe_menu_has_clothes_and_costumes_sections(pet, monkeypatch):

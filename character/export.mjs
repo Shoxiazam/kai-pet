@@ -90,6 +90,11 @@ try {
     await saveDoc('wardrobe_accessories.png', `grid([['scarf'], ['hat'], ['glasses'], ['headphones'], ['crown'],
       ['hat', 'scarf', 'glasses'], ['crown', 'scarf'], ['headphones', 'glasses']].map((a, i) =>
       Kai.svg({}, { look: { kind: Object.keys(Kai.KINDS)[i % 4], color: Object.keys(Kai.PALETTES)[i], acc: a } })), 4)`);
+    // Сочетания: несколько вещей сразу
+    await saveDoc('wardrobe_combos.png', `grid([['hat', 'bow', 'scarf', 'bowtie'], ['crown', 'headphones', 'sunglasses', 'cape', 'tuxedo'],
+      ['flowers', 'bow', 'glasses', 'sweater', 'umbrella'], ['headphones', 'hoodie', 'cape', 'scarf'],
+      ['hat', 'headphones', 'raincoat', 'umbrella'], ['shark', 'sunglasses', 'scarf', 'bowtie']].map((a, i) =>
+      Kai.svg({}, { look: { kind: Object.keys(Kai.KINDS)[i % 4], color: Object.keys(Kai.PALETTES)[i + 1], acc: a } })), 3)`);
   }
 
   ws.close();

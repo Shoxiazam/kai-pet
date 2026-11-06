@@ -86,6 +86,7 @@ def pet(monkeypatch, tmp_path):
     monkeypatch.setattr(pet_module, "cpu_load", lambda: None)
     monkeypatch.setenv("KAI_PET_USAGE", str(tmp_path / "usage.json"))
     pet_module.save_state("morning_day", __import__("datetime").date.today().isoformat())   # уже здоровался
+    pet_module.save_state("report_day", __import__("datetime").date.today().isoformat())   # вечерний отчёт уже был
     monkeypatch.setattr(pet_module, "audible_apps", lambda: None)
     monkeypatch.setattr(pet_module, "window_at", lambda x, y, skip: None)
     monkeypatch.setattr(pet_module, "background_mood", lambda app, *_: app or "idle")
@@ -223,6 +224,16 @@ def test_look_rules():
     assert look_id(look) == "cat-gray-crown+glasses"
     assert change_look(look, {"remove": "all"})["acc"] == []
     assert change_look(look, {"reset": True}) == {"kind": "cat", "color": "gray", "acc": []}
+
+
+def test_accessories_combine():
+    from kai_pet.pet import normalize_look
+    acc = lambda *items: normalize_look({"acc": list(items)})["acc"]   # noqa: E731
+    assert acc("hat", "bow", "headphones", "scarf", "bowtie", "glasses", "umbrella", "tshirt", "cape") == \
+        sorted(["hat", "bow", "headphones", "scarf", "bowtie", "glasses", "umbrella", "tshirt", "cape"])
+    assert acc("hat", "flowers", "glasses", "sunglasses", "tshirt", "hoodie") == ["flowers", "hoodie", "sunglasses"]
+    assert acc("bow", "headphones", "cape", "hoodie", "scarf", "shark") == ["scarf", "shark"]   # костюм закрывает
+    assert acc("shark", "scarf", "bow") == ["bow", "scarf"]                # а бантик снимает костюм
 
 
 def test_command_changes_look(pet, monkeypatch):

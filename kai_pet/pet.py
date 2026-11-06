@@ -129,17 +129,18 @@ KINDS = {"cat": "Котик", "fox": "Лисёнок", "bunny": "Зайка", "b
 COLORS = {"gray": "Серый", "ginger": "Рыжий", "graphite": "Графитовый", "terracotta": "Терракотовый",
           "sky": "Голубой", "mint": "Мятный", "lilac": "Сиреневый", "rose": "Розовый"}
 ACCESSORIES = {"scarf": ("Шарфик", "neck"), "hat": ("Шапочка", "head"), "glasses": ("Очки", "face"),
-               "headphones": ("Наушники", "head"), "crown": ("Корона", "head"),
+               "headphones": ("Наушники", "ears"), "crown": ("Корона", "head"),
                "sunglasses": ("Тёмные очки", "face"), "umbrella": ("Зонтик", "hand"),
-               "bow": ("Бантик", "head"), "bowtie": ("Бабочка", "neck"), "flowers": ("Венок", "head"),
+               "bow": ("Бантик", "hair"), "bowtie": ("Бабочка", "chest"), "flowers": ("Венок", "head"),
                # одежда (те же имена, что CLOTHES в character/kai.js)
                "tshirt": ("Футболка", "body"), "hoodie": ("Худи", "body"), "sweater": ("Свитер", "body"),
                "raincoat": ("Дождевик", "body"), "tuxedo": ("Смокинг", "body"), "pajama": ("Пижама", "body"),
-               "overalls": ("Комбинезон", "body"), "cape": ("Плащ героя", "body"),
+               "overalls": ("Комбинезон", "body"), "cape": ("Плащ героя", "back"),
                # костюмы целиком (COSTUMES): капюшон вместо шапки, комбинезон вместо одежды
                "shark": ("Акулёнок", "costume"), "dino": ("Динозаврик", "costume"), "bee": ("Пчёлка", "costume"),
                "frog": ("Лягушонок", "costume")}
-WARDROBE_MENUS = {"body": "Одежда", "costume": "Костюмы"}   # остальные места — в «Аксессуарах»
+WARDROBE_MENUS = {"body": "Одежда", "back": "Одежда", "costume": "Костюмы"}   # остальные места — в «Аксессуарах»
+COSTUME_HIDES = ("head", "hair", "ears", "body", "back")      # что костюм-кигуруми закрывает собой
 UNLOCKS = {"bow": 2, "bowtie": 3, "flowers": 4}     # награды за дружбу: вещь → на каком сердечке открывается
 FIDGETS = ("wash", "chasetail", "stretch", "yawn")  # мелочи от скуки
 FIDGET_EVERY_S = (150, 360)                          # раз в 2,5–6 минут, когда ничего не происходит
@@ -835,19 +836,19 @@ def shaking(trail, now: float, window: float = 1.0, turns_needed: int = 4, trave
 
 
 def normalize_look(look) -> dict:
-    """Только известные вид, цвет и вещи; на каждом месте (голова, шея, лицо) — одна вещь, последняя побеждает."""
+    """Только известные вид, цвет и вещи. Вещи сочетаются, если не лезут на одно место (шапка, корона и венок —
+    одно место; бантик, наушники, шарф с бабочкой, одежда с плащом — разные), последняя надетая побеждает."""
     look = look if isinstance(look, dict) else {}
     slots: dict[str, str] = {}
     known = all_accessories()
     for item in look.get("acc") or []:
         if item in known:
             slot = known[item][1]
-            if slot == "costume":              # костюм заменяет и шапку, и одежду — последнее надетое побеждает
-                slots.pop("head", None)
-                slots.pop("body", None)
-            elif slot in ("head", "body"):
+            if slot == "costume":              # костюм закрывает шапку, бантик, наушники и одежду
+                slots = {g: v for g, v in slots.items() if known[v][1] not in COSTUME_HIDES}
+            elif slot in COSTUME_HIDES:
                 slots.pop("costume", None)
-            slots[slot] = item
+            slots[slot if item in ACCESSORIES else item] = item   # свои вещи из папки сочетаются со всем
     return {"kind": look.get("kind") if look.get("kind") in KINDS else "cat",
             "color": look.get("color") if look.get("color") in COLORS else "gray",
             "acc": sorted(slots.values())}
@@ -2035,7 +2036,8 @@ class Pet(QWidget):
                 action.setCheckable(True)
                 action.setChecked(current[key] == name)
                 action.triggered.connect(lambda _c=False, k=key, n=name: self.change_look({k: n}))
-        groups = {slot: dress.addMenu(title) for slot, title in WARDROBE_MENUS.items()}
+        menus = {title: dress.addMenu(title) for title in dict.fromkeys(WARDROBE_MENUS.values())}
+        groups = {slot: menus[title] for slot, title in WARDROBE_MENUS.items()}
         things = dress.addMenu("Аксессуары")
         worn = set(self.look["acc"])
         for name, (ru, slot) in all_accessories().items():
