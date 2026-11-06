@@ -53,7 +53,23 @@ def munch() -> list[float]:
     return out
 
 
+def chirp(syllables: int, seed: int) -> list[float]:
+    """«Мяу-голос»: короткие мурлыкающие слоги разной высоты — Кай «говорит» облачком, как в играх."""
+    rnd, out, phase = random.Random(seed), [], 0.0
+    for _ in range(syllables):
+        n = int(RATE * rnd.uniform(0.06, 0.1))
+        start, end = rnd.uniform(560, 900), rnd.uniform(520, 980)
+        for i in range(n):
+            t = i / n
+            phase += 2 * math.pi * (start + (end - start) * t) / RATE
+            env = math.sin(math.pi * t) ** 1.5
+            out.append(env * (math.sin(phase) + 0.35 * math.sin(2 * phase)))
+        out.extend([0.0] * int(RATE * rnd.uniform(0.025, 0.05)))      # пауза между слогами
+    return out
+
+
 if __name__ == "__main__":
-    for name, fn in (("meow", meow), ("purr", purr), ("munch", munch)):
+    for name, fn in (("meow", meow), ("purr", purr), ("munch", munch), ("chirp1", lambda: chirp(3, 11)),
+                     ("chirp2", lambda: chirp(5, 23)), ("chirp3", lambda: chirp(7, 37))):
         save(name, fn())
     print("звуки сохранены в", OUT)

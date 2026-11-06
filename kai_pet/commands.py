@@ -23,9 +23,10 @@ class KaiAction:
 # Гардероб: основа слова → имя в kai.js. Кай рисует только свои образы.
 _ITEMS = {"шарф": "scarf", "шапк": "hat", "шапочк": "hat", "очк": "glasses", "очеч": "glasses",
           "наушник": "headphones", "корон": "crown", "темн": "sunglasses", "солнечн": "sunglasses",
-          "солнцезащитн": "sunglasses", "зонт": "umbrella"}
+          "солнцезащитн": "sunglasses", "зонт": "umbrella", "бант": "bow", "бабочк": "bowtie", "галстук": "bowtie",
+          "венок": "flowers", "венк": "flowers", "цветоч": "flowers", "цветы": "flowers"}
 _ITEM_RU = {"scarf": "шарфик", "hat": "шапочку", "glasses": "очки", "headphones": "наушники", "crown": "корону",
-            "sunglasses": "тёмные очки", "umbrella": "зонтик"}
+            "sunglasses": "тёмные очки", "umbrella": "зонтик", "bow": "бантик", "bowtie": "бабочку", "flowers": "венок"}
 _KINDS = {"лис": "fox", "зай": "bunny", "зайч": "bunny", "кролик": "bunny", "миш": "bear", "медвед": "bear",
           "кот": "cat", "кош": "cat"}
 _KIND_RU = {"fox": "лисёнком", "bunny": "зайкой", "bear": "мишкой", "cat": "котиком"}

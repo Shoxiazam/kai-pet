@@ -28,7 +28,8 @@ const KINDS = { cat: 'Котик', fox: 'Лисёнок', bunny: 'Зайка', b
 // slot: на голове одна вещь, очки и шарф — к чему угодно
 const ACCESSORIES = { scarf: { ru: 'Шарфик', slot: 'neck' }, hat: { ru: 'Шапочка', slot: 'head' },
   glasses: { ru: 'Очки', slot: 'face' }, headphones: { ru: 'Наушники', slot: 'head' }, crown: { ru: 'Корона', slot: 'head' },
-  sunglasses: { ru: 'Тёмные очки', slot: 'face' }, umbrella: { ru: 'Зонтик', slot: 'hand' } };
+  sunglasses: { ru: 'Тёмные очки', slot: 'face' }, umbrella: { ru: 'Зонтик', slot: 'hand' },
+  bow: { ru: 'Бантик', slot: 'head' }, bowtie: { ru: 'Бабочка', slot: 'neck' }, flowers: { ru: 'Венок', slot: 'head' } };
 // Свои вещи из папки accessories питомца: { id: { slot: 'head' | 'neck' | 'face', svg: '<svg viewBox="0 0 256 256">…' } }
 const CUSTOM = {};
 const LOOK = { kind: 'cat', color: 'gray', acc: [] };   // текущий образ; svg(..., { look }) может переопределить
@@ -360,6 +361,37 @@ const ANIMS = {
     p.sy *= 1 + 0.015 * b; p.tilt += 3 * b;
     return p;
   } },
+  // Мелочи от скуки: питомец сам иногда умывается, гоняется за хвостом, потягивается, зевает.
+  wash: { ru: 'Умывается лапкой', frames: 32, fps: 16, state: 'neutral', fn: (p, t) => {
+    const s = Math.sin(4 * TAU * t);
+    Object.assign(p, { eyeL: 'closed', eyeR: 'closed', mouth: 'tongue', blush: 0.6, armL: -150 + 18 * s, armR: 6,
+      tilt: -10 + 4 * s, curl: 0.9 });
+    p.earL += 10 + 6 * s; p.tail += 6 * Math.sin(TAU * t);
+    return p;
+  } },
+  chasetail: { ru: 'Гоняется за хвостом', frames: 32, fps: 20, state: 'neutral', fn: keyed([
+    [0, {}],
+    [0.15, { look: [0.9, 0.4], tilt: 12, tail: 40, curl: 0.1, sparkle: 1, eyeScale: 1.1, mouth: 'o', mouthOpen: 0.5 }],
+    [0.35, { facing: -1, rot: 14, look: [-0.9, 0.4], step: 1, tail: 50, curl: 0.1, mouth: 'grin', mouthOpen: 0.6, y: -6 }],
+    [0.55, { facing: 1, rot: -14, look: [0.9, 0.4], step: -1, tail: 50, curl: 0.1, mouth: 'grin', mouthOpen: 0.6, y: -6 }],
+    [0.75, { facing: -1, rot: 10, look: [-0.8, 0.3], step: 1, tail: 40, mouth: 'grin', mouthOpen: 0.4 }],
+    [0.9, { eyes: 'happy', mouth: 'smile', blush: 0.8, tail: 20 }],
+    [1, {}],
+  ]) },
+  stretch: { ru: 'Потягивается', frames: 36, fps: 18, state: 'neutral', fn: keyed([
+    [0, {}],
+    [0.3, { arms: 170, sy: 1.1, sx: 0.93, y: -6, eyes: 'closed', mouth: 'o', mouthOpen: 0.9, ears: -12, tail: 30, curl: 0.2 }],
+    [0.6, { arms: 175, sy: 1.12, sx: 0.92, y: -7, eyes: 'closed', mouth: 'o', mouthOpen: 1, ears: -14, tail: 34, curl: 0.2 }],
+    [0.8, { eyes: 'happy', mouth: 'smile', blush: 0.6, sy: 0.97, sx: 1.02 }],
+    [1, {}],
+  ]) },
+  yawn: { ru: 'Зевает', frames: 32, fps: 16, state: 'neutral', fn: keyed([
+    [0, {}],
+    [0.35, { eyes: 'closed', mouth: 'o', mouthOpen: 1.2, ears: 22, tilt: -6, sy: 1.04, sx: 0.98, arms: -30 }],
+    [0.65, { eyes: 'closed', mouth: 'o', mouthOpen: 1.2, ears: 24, tilt: -8, sy: 1.04, sx: 0.98, arms: -30 }],
+    [0.85, { open: 0.5, mouth: 'smile', ears: 14, blush: 0.4 }],
+    [1, {}],
+  ]) },
   purr: { ru: 'Мурлычет', frames: 32, fps: 16, state: 'neutral', fn: (p, t) => {
     Object.assign(p, { eyeL: 'closed', eyeR: 'closed', mouth: 'smile', blush: 0.9, curl: 0.9 });
     p.sy *= 1 + 0.012 * Math.sin(8 * TAU * t);              // мелкая дрожь мурчания
@@ -401,7 +433,8 @@ const EARS = {
     in: 'M-9,-6 A9,9 0 1 1 9,-6 A9,9 0 1 1 -9,-6 Z', angle: 22, tip: null },
 };
 const ACC_COLOR = { scarf: '#E05A47', hat: '#5B8DEF', crown: '#F2C14E', phones: '#5B6474', cups: '#E05A47',
-  umbrella: '#4FA3A5', wood: '#B07A4F', board: '#F6E7C8' };
+  umbrella: '#4FA3A5', wood: '#B07A4F', board: '#F6E7C8', bow: '#E05A47', bowtie: '#5B8DEF', petal: '#F2A0C0',
+  bloom: '#F2C14E' };
 
 const star = (x, y, r) => `M${f(x)},${f(y - r)} Q${f(x)},${f(y)} ${f(x + r)},${f(y)} Q${f(x)},${f(y)} ${f(x)},${f(y + r)} ` +
   `Q${f(x)},${f(y)} ${f(x - r)},${f(y)} Q${f(x)},${f(y)} ${f(x)},${f(y - r)}Z`;
@@ -543,6 +576,8 @@ function svg(pose, opt = {}) {
     brows + `<g id="mouth">${mouth(p.mouth, p.mouthOpen, ink, blush)}</g></g>`;
 
   // Аксессуары: шарф — на шее под лапками, головные — поверх головы и наклоняются вместе с ней.
+  const bowtie = wear.has('bowtie') ? `<g id="acc-bowtie" style="fill:${ACC_COLOR.bowtie};stroke:${ink};stroke-width:4;stroke-linejoin:round">` +
+    `<path d="M128,192 L106,180 L106,204 Z"/><path d="M128,192 L150,180 L150,204 Z"/><circle cx="128" cy="192" r="6"/></g>` : '';
   const scarf = wear.has('scarf') ? `<g id="acc-scarf" style="fill:${ACC_COLOR.scarf};stroke:${ink};stroke-width:4;stroke-linejoin:round">` +
     `<path d="M160,192 L172,228 L186,223 L178,188 Z"/><path d="M68,178 Q128,197 188,178 L190,188 Q128,207 66,188 Z"/>` +
     `<path d="M80,185 Q128,201 176,185" style="fill:none;stroke:${cream};stroke-width:2.5;opacity:.7"/></g>` : '';
@@ -554,6 +589,12 @@ function svg(pose, opt = {}) {
   else if (wear.has('crown')) head = `<g id="acc-crown" style="stroke:${ink};stroke-width:4;stroke-linejoin:round">` +
     `<path d="M106,112 L106,92 L117,102 L128,86 L139,102 L150,92 L150,112 Z" style="fill:${ACC_COLOR.crown}"/>` +
     `<circle cx="128" cy="104" r="3" style="fill:${blush};stroke-width:1.5"/></g>`;
+  else if (wear.has('bow')) head = `<g id="acc-bow" style="fill:${ACC_COLOR.bow};stroke:${ink};stroke-width:4;stroke-linejoin:round">` +
+    `<path d="M152,96 L134,82 L136,110 Z"/><path d="M152,96 L170,82 L168,110 Z"/><circle cx="152" cy="96" r="6"/></g>`;
+  else if (wear.has('flowers')) head = `<g id="acc-flowers" style="stroke:${ink};stroke-width:2.5">` +
+    [[92, 110], [110, 100], [128, 97], [146, 100], [164, 110]].map(([x, y]) =>
+      [0, 72, 144, 216, 288].map(a => `<circle cx="${f(x + 6 * Math.cos(a * Math.PI / 180))}" cy="${f(y + 6 * Math.sin(a * Math.PI / 180))}" r="4.6" style="fill:${ACC_COLOR.petal}"/>`).join('') +
+      `<circle cx="${x}" cy="${y}" r="3.6" style="fill:${ACC_COLOR.bloom}"/>`).join('') + '</g>';
   else if (wear.has('headphones')) head = `<g id="acc-headphones">` +
     `<path d="M70,150 C66,96 98,78 128,78 C158,78 190,96 186,150" style="${outline(11)}"/>` +
     `<path d="M70,150 C66,96 98,78 128,78 C158,78 190,96 186,150" style="fill:none;stroke:${ACC_COLOR.phones};stroke-width:5;stroke-linecap:round"/>` +
@@ -595,7 +636,7 @@ function svg(pose, opt = {}) {
   const T = `${flip}translate(0 ${f(p.y)}) rotate(${f(p.rot)} 128 228) translate(128 228) scale(${f(p.sx)} ${f(p.sy)}) translate(-128 -228)`;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}" width="${size}" height="${size}">` +
     `<defs><clipPath id="${id}-ear"><path d="${E.out}"/></clipPath></defs>` +
-    `${bedBack}<g id="kai" transform="${T}">${tail}<g id="ears" transform="${tilt}">${ear(-1)}${ear(1)}</g>${body}${spark}${scarf}${feet}${umbrella}${arm(-1)}${arm(1)}${blanket}${heart}${face}${treat}${hat}${mine}</g>${bedBase}${zzz}${sign}</svg>`;
+    `${bedBack}<g id="kai" transform="${T}">${tail}<g id="ears" transform="${tilt}">${ear(-1)}${ear(1)}</g>${body}${spark}${scarf}${bowtie}${feet}${umbrella}${arm(-1)}${arm(1)}${blanket}${heart}${face}${treat}${hat}${mine}</g>${bedBase}${zzz}${sign}</svg>`;
 }
 
 // ── Публичный API

@@ -85,6 +85,7 @@ def pet(monkeypatch, tmp_path):
     monkeypatch.setattr(pet_module, "battery", lambda: None)
     monkeypatch.setattr(pet_module, "cpu_load", lambda: None)
     monkeypatch.setenv("KAI_PET_USAGE", str(tmp_path / "usage.json"))
+    pet_module.save_state("morning_day", __import__("datetime").date.today().isoformat())   # уже здоровался
     monkeypatch.setattr(pet_module, "audible_apps", lambda: None)
     monkeypatch.setattr(pet_module, "window_at", lambda x, y, skip: None)
     monkeypatch.setattr(pet_module, "background_mood", lambda app, *_: app or "idle")

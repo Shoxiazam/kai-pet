@@ -45,6 +45,7 @@ def pet(monkeypatch, tmp_path, played):
     monkeypatch.setattr(pet_module, "battery", lambda: None)
     monkeypatch.setattr(pet_module, "cpu_load", lambda: None)
     monkeypatch.setenv("KAI_PET_USAGE", str(tmp_path / "usage.json"))
+    pet_module.save_state("morning_day", __import__("datetime").date.today().isoformat())   # уже здоровался
     monkeypatch.setattr(pet_module, "audible_apps", lambda: {"spotify.exe"})     # звучит музыкальная программа
     monkeypatch.setattr(pet_module, "window_at", lambda x, y, skip: None)      # под Каем — рабочий стол
     monkeypatch.setattr(pet_module, "background_mood", lambda app, *_: app or "idle")
@@ -896,3 +897,137 @@ def test_menu_has_care_items(pet, monkeypatch):
     pet.contextMenuEvent(Ev())
     for t in ("Фокус 25 минут", "Отчёт за сегодня", "Отдых для глаз (20-20-20)", "Батарея и нагрузка"):
         assert t in titles, t
+
+
+# --- мелочи от скуки ---
+def test_fidgets_only_when_nothing_happens(pet, monkeypatch):
+    now = time.monotonic()
+    pet._fidget_at = now - 1
+    pet._cute(now, 0.0)
+    assert pet.once in pet_module.FIDGETS and pet._fidget_at > now + 100      # следующая — через пару минут
+    for anim in pet_module.FIDGETS:
+        assert (pet_module.ASSETS / "frames" / anim).is_dir()
+    pet.once, pet._fidget_at = None, now - 1
+    pet.set_sign("Обед")                                                       # держит табличку — не отвлекается
+    pet._cute(now, 0.0)
+    assert pet.once is None
+
+
+# --- доброе утро ---
+def test_morning_greeting_once_with_weather_and_extra(pet, monkeypatch, played):
+    pet_module.save_state("morning_day", "")
+    pet.weather, pet.weather_on = (4.0, 61), True
+    pet.morning_extra = lambda: "Сегодня напоминаний: 2."
+    pet._cute(time.monotonic(), 0.0)
+    text = pet.bubble.text.text()
+    assert pet.once == "stretch" and "+4°, дождь — возьми зонт" in text and "напоминаний: 2" in text
+    assert any(name.startswith("chirp") for name in played)                 # мяу-голос
+    pet.bubble.hide()
+    pet.once = None
+    pet._cute(time.monotonic(), 0.0)
+    assert not pet.bubble.isVisible()                                       # один раз за день
+    assert pet_module.greeting(8) == "Доброе утро" and pet_module.greeting(20) == "Добрый вечер"
+
+
+# --- скучал ---
+def test_missed_kai_is_sad_then_happy(monkeypatch, tmp_path, played):
+    QApplication.instance() or QApplication([])
+    monkeypatch.setenv("KAI_PET_STATE", str(tmp_path / "state.json"))
+    monkeypatch.setenv("KAI_PET_USAGE", str(tmp_path / "usage.json"))
+    old = (dt.datetime.now() - dt.timedelta(hours=30)).isoformat(timespec="minutes")
+    pet_module.save_state("last_care", old)
+    pet_module.save_state("morning_day", dt.date.today().isoformat())
+    for name, value in (("active_window", lambda: ("", "explorer.exe")), ("active_window_rect", lambda: None),
+                        ("input_idle_s", lambda: 0.0), ("audio_peak", lambda: 0.0), ("audible_apps", lambda: None),
+                        ("battery", lambda: None), ("cpu_load", lambda: None)):
+        monkeypatch.setattr(pet_module, name, value)
+    p = pet_module.Pet()
+    try:
+        p.once = None
+        monkeypatch.setattr(p, "_cursor", lambda: QPoint(-5000, -5000))
+        assert p.missing and p.current() == "tired"                        # грустит
+        p._cute(time.monotonic(), 0.0)
+        assert "соскучился" in p.bubble.text.text()
+        before = p.friend
+        p.petted()
+        assert not p.missing and p.once == "heart" and "скучал" in p.bubble.text.text() and p.friend >= before + 2
+        assert pet_module._hours_since(pet_module.load_state()["last_care"]) < 1
+    finally:
+        p.shutdown()
+
+
+# --- награды за дружбу ---
+def test_friendship_unlocks_new_things(pet, monkeypatch):
+    pet.friend = 0
+    assert pet.locked("bow") == 2 and pet.locked("scarf") == 0
+    pet.change_look({"wear": "bow"})
+    assert "сердечке" in pet.bubble.text.text() and "bow" not in pet.chosen["acc"]   # пока закрыто
+    pet._befriend(pet_module.FRIEND_LEVELS[1])                              # сразу второе сердечко
+    assert "Подарок: бантик" in pet.bubble.text.text() and pet.locked("bow") == 0
+    monkeypatch.setattr(pet, "_wear", lambda look, announce, greet=False: None)
+    pet.change_look({"wear": "bow"})
+    assert "bow" in pet.chosen["acc"]
+    for _ in range(30):
+        pet.change_look({"random": True})
+        assert not {"bowtie", "flowers"} & set(pet.chosen["acc"])           # «удиви меня» — только открытое
+
+
+def test_locked_things_are_greyed_in_menu(pet, monkeypatch):
+    pet.friend = 0
+    seen = {}
+
+    def walk(menu):
+        for a in menu.actions():
+            seen[a.text()] = a.isEnabled()
+            if a.menu():
+                walk(a.menu())
+    monkeypatch.setattr(pet, "_show_menu", lambda menu, pos: walk(menu))
+
+    class Ev:
+        def globalPos(self):
+            return QPoint(0, 0)
+    pet.contextMenuEvent(Ev())
+    assert seen["Бантик — на 2-м ♥"] is False and seen["Венок — на 4-м ♥"] is False and seen["Шарфик"] is True
+
+
+def test_new_things_by_words():
+    from kai_pet import commands
+    assert commands.parse("надень бантик").look == {"wear": "bow"}
+    assert commands.parse("надень бабочку").look == {"wear": "bowtie"}
+    assert commands.parse("надень венок").look == {"wear": "flowers"}
+
+
+# --- праздники ---
+def test_holidays():
+    assert pet_module.holiday(dt.date(2026, 12, 31)) == "newyear"
+    assert pet_module.holiday(dt.date(2027, 1, 5)) == "newyear"
+    assert pet_module.holiday(dt.date(2026, 10, 31)) == "halloween"
+    assert pet_module.holiday(dt.date(2026, 3, 21), "03-21") == "birthday"
+    assert pet_module.holiday(dt.date(2026, 6, 1)) is None
+
+
+@pytest.mark.parametrize("kind", ["newyear", "halloween", "birthday"])
+def test_holiday_decorations_are_drawn(pet, kind):
+    from PySide6.QtGui import QImage
+    pet._tick()
+    plain = pet.grab().toImage()
+    img = QImage(plain)
+    painter = pet_module.QPainter(img)
+    pet._paint_holiday(painter, kind)
+    painter.end()
+    assert img != plain                                                    # что-то нарисовалось
+
+
+# --- мяу-голос ---
+def test_meow_voice_for_kai_lines_only(pet, played):
+    pet.speak("Привет!")
+    pet.speak("Это довольно длинная фраза, чтобы Кай побормотал подольше, чем обычно.")
+    assert played[-2:] == ["chirp1.wav", "chirp3.wav"]
+    played.clear()
+    pet.say("Ответ ассистента")                                            # у ассистента свой голос
+    assert played == []
+    pet.sounds_on = False
+    pet.speak("Тихо")
+    assert played == []
+    for name in ("chirp1", "chirp2", "chirp3"):
+        assert (pet_module.ASSETS / "sounds" / f"{name}.wav").is_file()

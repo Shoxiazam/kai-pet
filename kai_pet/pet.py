@@ -130,7 +130,12 @@ COLORS = {"gray": "Серый", "ginger": "Рыжий", "graphite": "Графи�
           "sky": "Голубой", "mint": "Мятный", "lilac": "Сиреневый", "rose": "Розовый"}
 ACCESSORIES = {"scarf": ("Шарфик", "neck"), "hat": ("Шапочка", "head"), "glasses": ("Очки", "face"),
                "headphones": ("Наушники", "head"), "crown": ("Корона", "head"),
-               "sunglasses": ("Тёмные очки", "face"), "umbrella": ("Зонтик", "hand")}
+               "sunglasses": ("Тёмные очки", "face"), "umbrella": ("Зонтик", "hand"),
+               "bow": ("Бантик", "head"), "bowtie": ("Бабочка", "neck"), "flowers": ("Венок", "head")}
+UNLOCKS = {"bow": 2, "bowtie": 3, "flowers": 4}     # награды за дружбу: вещь → на каком сердечке открывается
+FIDGETS = ("wash", "chasetail", "stretch", "yawn")  # мелочи от скуки
+FIDGET_EVERY_S = (150, 360)                          # раз в 2,5–6 минут, когда ничего не происходит
+MISS_AFTER_H = 24                                    # не гладили и не кормили сутки — скучает
 DEFAULT_LOOK = {"kind": "cat", "color": "gray", "acc": []}
 SLOTS = ("head", "neck", "face", "hand")
 CUSTOM_MAX_BYTES = 2_000_000  # своя вещь — картинка, а не фотоальбом
@@ -888,6 +893,38 @@ def effective_look(chosen: dict, day: datetime.date, birthday: str = "", seasona
     return normalize_look(look)
 
 
+def _hours_since(stamp) -> float:
+    try:
+        return (datetime.datetime.now() - datetime.datetime.fromisoformat(str(stamp))).total_seconds() / 3600
+    except ValueError:
+        return 0.0
+
+
+def holiday(day: datetime.date, birthday: str = "") -> str | None:
+    """Праздник для украшений вокруг Кая: день рождения, Новый год (20.12–10.01), Хэллоуин (25–31.10)."""
+    if birthday and day.strftime("%m-%d") == birthday:
+        return "birthday"
+    md = (day.month, day.day)
+    if md >= (12, 20) or md <= (1, 10):
+        return "newyear"
+    if (10, 25) <= md <= (10, 31):
+        return "halloween"
+    return None
+
+
+def greeting(hour: int) -> str:
+    return "Доброе утро" if 5 <= hour < 12 else "Добрый день" if hour < 18 else "Добрый вечер" if hour < 23 else "Доброй ночи"
+
+
+def weather_tip(temp: float, code: int) -> str:
+    """«+5°, дождь — возьми зонт» для утреннего приветствия."""
+    tip = {"umbrella": "возьми зонт", "hat": "оденься теплее", "scarf": "не забудь шарф",
+           "sunglasses": "жарко, пей воду"}
+    items = weather_items(temp, code)
+    advice = next((tip[i] for i in ("umbrella", "hat", "scarf", "sunglasses") if i in items), "")
+    return f"{temp:+.0f}°, {weather_words(code)}" + (f" — {advice}" if advice else "")
+
+
 def friend_level(points: int) -> int:
     return sum(points >= x for x in FRIEND_LEVELS)
 
@@ -947,6 +984,12 @@ class Pet(QWidget):
         self._was_charging: bool | None = None
         self._usage: dict = self._load_usage()
         self._usage_saved = time.monotonic()
+        self._fidget_at = time.monotonic() + random.uniform(*FIDGET_EVERY_S)
+        last_care = state.get("last_care")
+        if not last_care:
+            save_state("last_care", datetime.datetime.now().isoformat(timespec="minutes"))
+        self.missing = _hours_since(last_care) >= MISS_AFTER_H     # долго не гладили — скучает
+        self._missing_said = False
         self.city = str(state.get("city", ""))
         self.weather: tuple[float, int] | None = None                         # (температура, код) — когда узнали
         self._weather_announce = False
@@ -1033,6 +1076,18 @@ class Pet(QWidget):
                               state.get("winter_off", ""), wx)
 
     def change_look(self, op: dict) -> None:
+        if op.get("wear") and self.locked(op["wear"]):
+            self.speak(f"{ACCESSORIES[op['wear']][0]} откроется на {self.locked(op['wear'])}-м сердечке дружбы. "
+                       "Погладь меня почаще!", 7000)
+            return
+        if op.get("random"):                   # «удиви меня» — только из того, что уже открыто
+            look = change_look(self.chosen, op)
+            look["acc"] = [a for a in look["acc"] if not self.locked(a)]
+            self.set_look(look)
+            return
+        self._change_look(op)
+
+    def _change_look(self, op: dict) -> None:
         """Команда гардеробу. Снять сезонную вещь — значит не надевать её до конца сезона."""
         removed = op.get("remove")
         seasonal_now = set(self._effective()["acc"]) - set(self.chosen["acc"])
@@ -1067,10 +1122,10 @@ class Pet(QWidget):
         added = set(look["acc"]) - set(self.chosen["acc"])
         if "crown" in added and state.get("birthday_greeted") != today.isoformat():
             save_state("birthday_greeted", today.isoformat())
-            self.bubble.say("С днём рождения! Надел корону в твою честь.", 12000)
+            self.speak("С днём рождения! Надел корону в твою честь.", 12000)
         elif added & {"hat", "scarf"} and state.get("winter_greeted") != season_key(today):
             save_state("winter_greeted", season_key(today))
-            self.bubble.say("Зима пришла! Надел шапочку и шарфик.", 10000)
+            self.speak("Зима пришла! Надел шапочку и шарфик.", 10000)
 
     def _apply_look(self, look: dict, announce: bool) -> None:
         self.look, self.dir = look, self.look_dir(look)
@@ -1080,7 +1135,7 @@ class Pet(QWidget):
             os.utime(self.dir)                  # свежий образ не удалится при уборке
         if announce:
             self.play("wave")
-            self.bubble.say(random.choice(DRESSED), 6000)
+            self.speak(random.choice(DRESSED), 6000)
 
     def _start_export(self, look: dict, announce: bool) -> None:
         """Кадры нового образа рисуются в фоне (≈20 с): node character/export.mjs с KAI_LOOK и KAI_OUT."""
@@ -1088,7 +1143,7 @@ class Pet(QWidget):
         if not node or not script.is_file():
             log.warning("Кай не может переодеться: нет node или %s", script)
             if announce:
-                self.bubble.say("Не получается переодеться: нужен Node.js и Edge или Chrome.", 6000)
+                self.speak("Не получается переодеться: нужен Node.js и Edge или Chrome.", 6000)
             return
         tmp = self.look_dir(look).with_name(look_id(look) + ".tmp")
         shutil.rmtree(tmp, ignore_errors=True)
@@ -1123,7 +1178,7 @@ class Pet(QWidget):
         QTimer.singleShot(EXPORT_TIMEOUT_MS, lambda: proc.state() != QProcess.NotRunning and proc.kill())
         proc.start()
         if announce:
-            self.bubble.say("Переодеваюсь… минутку", 25000)
+            self.speak("Переодеваюсь… минутку", 25000)
 
     def _export_done(self, look: dict, tmp: Path, code: int, announce: bool) -> None:
         if self._export is None:                # уже обработано (ошибка запуска и конец процесса)
@@ -1143,7 +1198,7 @@ class Pet(QWidget):
             shutil.rmtree(tmp, ignore_errors=True)
             err = bytes(proc.readAllStandardError()).decode(errors="replace")[-300:] if proc else ""
             log.warning("Кай не переоделся (код %s): %s", code, err)
-            self.bubble.say("Не получилось переодеться. Попробую в другой раз.", 6000)
+            self.speak("Не получилось переодеться. Попробую в другой раз.", 6000)
         pending, self._pending_look = self._pending_look, None
         if pending is not None:
             self._wear(pending, announce)
@@ -1158,11 +1213,24 @@ class Pet(QWidget):
                 shutil.rmtree(d, ignore_errors=True)
 
     # --- погладить, угостить, дружба ---
+    def _cared(self) -> bool:
+        """Погладили или угостили. True — Кай скучал и теперь радуется."""
+        save_state("last_care", datetime.datetime.now().isoformat(timespec="minutes"))
+        if not self.missing:
+            return False
+        self.missing = False
+        self.play("heart", 2)
+        self.speak("Ура! Я так скучал!", 6000)
+        self._befriend(2)
+        return True
+
     def petted(self) -> None:
         """Погладили мышкой: мурлычет и жмурится; дружба растёт не чаще раза в минуту."""
         if self.once == "purr":
             return
         self._touch()
+        if self._cared():
+            return
         self.play("purr", 2)
         self._sound("purr")
         if time.monotonic() - self._last_pet_friend > 60:
@@ -1173,13 +1241,14 @@ class Pet(QWidget):
         """Печенька — раз в день. Второй раз Кай вежливо откажется."""
         today = datetime.date.today().isoformat()
         if load_state().get("last_fed") == today:
-            self.bubble.say("Спасибо, я уже наелся! Давай завтра.", 5000)
+            self.speak("Спасибо, я уже наелся! Давай завтра.", 5000)
             return
         save_state("last_fed", today)
         self._touch()
+        self._cared()
         self.play("eat")
         self._sound("munch")
-        self.bubble.say("Ням! Спасибо за печеньку!", 5000)
+        self.speak("Ням! Спасибо за печеньку!", 5000)
         self._befriend(3)
 
     def _befriend(self, points: int) -> None:
@@ -1188,7 +1257,16 @@ class Pet(QWidget):
         save_state("friend", self.friend)
         after = friend_level(self.friend)
         if after > before:
-            self.bubble.say(f"Мы стали ещё ближе! Дружба: {'♥' * after}{'♡' * (len(FRIEND_LEVELS) - after)}", 8000)
+            gift = [ACCESSORIES[a][0].lower() for a, lvl in UNLOCKS.items() if before < lvl <= after]
+            hearts = f"{'♥' * after}{'♡' * (len(FRIEND_LEVELS) - after)}"
+            self.play("heart", 2)
+            self.speak(f"Мы стали ещё ближе! Дружба: {hearts}" + (f". Подарок: {', '.join(gift)} — "
+                       "загляни во «Внешность»!" if gift else ""), 10000)
+
+    def locked(self, item: str) -> int:
+        """На каком сердечке откроется вещь; 0 — уже можно."""
+        need = UNLOCKS.get(item, 0)
+        return need if friend_level(self.friend) < need else 0
 
     def friendship_text(self) -> str:
         lvl = friend_level(self.friend)
@@ -1231,7 +1309,14 @@ class Pet(QWidget):
         if self.loop == "working" and not self.bubble.asking:
             self.bubble.hide()                 # реплика не должна закрывать экран, пока ассистент кликает
 
+    def speak(self, text: str, hide_after_ms: int = 8000) -> None:
+        """Реплика самого Кая: облачко и «мяу-голос» (короткое бормотание по длине фразы)."""
+        self.bubble.say(text, hide_after_ms)
+        if text.strip() and not self.bubble.asking:
+            self._sound("chirp1" if len(text) < 25 else "chirp2" if len(text) < 60 else "chirp3")
+
     def say(self, text: str, hide_after_ms: int = 12000) -> None:
+        """Ответ вашего ассистента облачком — без мяу-голоса, у ассистента свой голос."""
         self.bubble.say(text, hide_after_ms)
 
     def ask(self, question: str) -> None:
@@ -1307,7 +1392,7 @@ class Pet(QWidget):
         if "error" in reply:
             log.info("Погода не получена: %s", reply["error"])
             if announce:
-                self.bubble.say(f"Не получилось узнать погоду: {reply['error']}", 8000)
+                self.speak(f"Не получилось узнать погоду: {reply['error']}", 8000)
             return
         geo, temp, code = reply["result"]
         save_state("geo", geo)
@@ -1316,7 +1401,7 @@ class Pet(QWidget):
         now = weather_items(temp, code)
         if announce or (before is not None and set(now) != set(before)):
             wear = ", ".join(ACCESSORIES[i][0].lower() for i in now) or "ничего особенного"
-            self.bubble.say(f"{geo.get('name', self.city)}: {temp:+.0f}°, {weather_words(code)}. Надеваю: {wear}.", 9000)
+            self.speak(f"{geo.get('name', self.city)}: {temp:+.0f}°, {weather_words(code)}. Надеваю: {wear}.", 9000)
         self._wear(self._effective(), announce=False)
 
     def _ask_city(self) -> None:
@@ -1381,6 +1466,7 @@ class Pet(QWidget):
             log.debug("Активное окно не прочитано: %s", e)
             self.app = None
         self._care(now, idle, process)
+        self._cute(now, idle)
         if datetime.date.today() != self._today:  # наступил новый день: зима, день рождения, счётчик дней
             self._today = datetime.date.today()
             self._mark_day()
@@ -1390,7 +1476,7 @@ class Pet(QWidget):
         """Мягкая подсказка облачком. Выключается в меню Кая."""
         self.last_hint = time.monotonic()
         if self.hints and self.isVisible() and not self.bubble.asking:
-            self.bubble.say(random.choice(phrases), 15000)
+            self.speak(random.choice(phrases), 15000)
 
     def _idle_s(self) -> float:
         return min(input_idle_s(), time.monotonic() - self.last_event)
@@ -1421,6 +1507,8 @@ class Pet(QWidget):
             return "bed" if self._has("bed") else "sleepy"   # уходит спать в кроватку
         hour = datetime.datetime.now().hour
         mood = background_mood(self.app, hour, time.monotonic() - self.session_start, self.cfg.tired_after_min * 60)
+        if self.missing and mood == "idle" and self._has("tired"):
+            return "tired"                     # давно не гладили — грустит
         return mood if mood == "idle" or self._has(mood) else "idle"
 
     # --- кадры ---
@@ -1529,8 +1617,43 @@ class Pet(QWidget):
             p.scale(k, k)
             p.translate(-half, -half)
         p.drawPixmap(0, 0, self._pix)
+        if self.seasonal:
+            kind = holiday(datetime.date.today(), self.cfg.birthday)
+            if kind:
+                self._paint_holiday(p, kind)
         if self.shown == "sign" and self.board_text():
             self._paint_sign(p)
+
+    def _paint_holiday(self, p: QPainter, kind: str) -> None:
+        """Праздник вокруг Кая: падающий снег, тыква у лап, торт со свечкой."""
+        s, t = self.size_px, time.monotonic()
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(QColor("#3D3929"))
+        if kind == "newyear":
+            p.setPen(QColor(110, 150, 200, 230))         # видно и на светлом, и на тёмном столе
+            p.setBrush(QColor(225, 238, 252, 240))
+            for i in range(8):
+                x = (i * 37 % 100) / 100 * s + 5 * math.sin(t * 1.3 + i)
+                y = (t * s * 0.12 + i * s / 8) % s
+                r = s * (0.02 + 0.008 * (i % 3))
+                p.drawEllipse(QRectF(x - r, y - r, 2 * r, 2 * r))
+        elif kind == "halloween":
+            p.setBrush(QColor("#F28C28"))
+            p.drawEllipse(QRectF(s * 0.02, s * 0.80, s * 0.2, s * 0.15))
+            p.drawLine(int(s * 0.12), int(s * 0.81), int(s * 0.12), int(s * 0.94))
+            p.setBrush(QColor("#4E8B3A"))
+            p.drawRect(QRectF(s * 0.11, s * 0.77, s * 0.025, s * 0.04))
+        elif kind == "birthday":
+            p.setBrush(QColor("#F6C1D0"))
+            p.drawRect(QRectF(s * 0.78, s * 0.84, s * 0.19, s * 0.12))
+            p.setBrush(QColor("#FFF6E9"))
+            p.drawRect(QRectF(s * 0.78, s * 0.84, s * 0.19, s * 0.03))
+            p.setBrush(QColor("#7FB3E8"))
+            p.drawRect(QRectF(s * 0.865, s * 0.77, s * 0.02, s * 0.07))
+            flick = 1 + 0.15 * math.sin(t * 12)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor("#F2C14E"))
+            p.drawEllipse(QRectF(s * 0.862, s * (0.735 - 0.01 * flick), s * 0.026, s * 0.04 * flick))
 
     def _paint_sign(self, p: QPainter) -> None:
         """Ваш текст на табличке: самый крупный шрифт, при котором он помещается."""
@@ -1618,13 +1741,45 @@ class Pet(QWidget):
         self._pin = {"hwnd": hwnd, "title": title,
                      "dx": round(self.x() * ratio) - rect[0], "dy": round(self.y() * ratio) - rect[1]}
         short = title if len(title) <= 28 else title[:27] + "…"
-        self.bubble.say(f"Держусь за «{short}»", 4000)
+        self.speak(f"Держусь за «{short}»", 4000)
 
     def unpin(self) -> None:
         self._release_pin()
         if self._pin_hid:
             self._pin_hid = False
             self.show()
+
+    # --- милые мелочи: доброе утро, скучал, занимается своими делами ---
+    def morning_extra(self) -> str:
+        """Добавка к утреннему приветствию (например, напоминания ассистента). Переопределяется."""
+        return ""
+
+    def _cute(self, now: float, idle: float) -> None:
+        if self.away or idle >= 3 * 60:
+            return
+        today = datetime.date.today().isoformat()
+        if load_state().get("morning_day") != today and self.loop == "idle" and not self.bubble.asking:
+            save_state("morning_day", today)
+            parts = [greeting(datetime.datetime.now().hour) + "!"]
+            if self.weather and self.weather_on:
+                parts.append(weather_tip(*self.weather).capitalize() + ".")
+            extra = self.morning_extra()
+            if extra:
+                parts.append(extra)
+            self.play("stretch")
+            self.speak(" ".join(parts), 12000)
+            return
+        if self.missing and not self._missing_said and self.loop == "idle" and not self.once:
+            self._missing_said = True
+            self.gesture("tired", 3)
+            self.speak("Я соскучился… погладишь меня?", 8000)
+            return
+        busy = (self.once or self.loop != "idle" or self.music or self.sign_text or self.focus_until
+                or self._eyes_rest or self._idle_s() > self.cfg.sleep_after_min * 60)
+        if now >= self._fidget_at and not busy:
+            self._fidget_at = now + random.uniform(*FIDGET_EVERY_S)
+            late = datetime.datetime.now().hour >= 22 or datetime.datetime.now().hour < 6
+            self.play("yawn" if late and random.random() < 0.6 else random.choice(FIDGETS))
 
     def _release_pin(self) -> None:
         """Отпустил окно; заметка, приклеенная к нему, уходит вместе с окном."""
@@ -1662,7 +1817,7 @@ class Pet(QWidget):
         self._distract_at = 0.0
         self._touch()
         self.play("like")
-        self.bubble.say(f"Фокус на {minutes} мин. Я присмотрю, чтобы ничего не отвлекало.", 5000)
+        self.speak(f"Фокус на {minutes} мин. Я присмотрю, чтобы ничего не отвлекало.", 5000)
 
     def stop_focus(self, done: bool = False) -> None:
         if not self.focus_until:
@@ -1671,9 +1826,9 @@ class Pet(QWidget):
         if done:
             self.play("clap", 2)
             self._sound("meow")
-            self.bubble.say("Фокус окончен — ты молодец! Отдохни 5 минут.", 12000)
+            self.speak("Фокус окончен — ты молодец! Отдохни 5 минут.", 12000)
         else:
-            self.bubble.say("Фокус выключен.", 3000)
+            self.speak("Фокус выключен.", 3000)
 
     def _care(self, now: float, idle: float, process: str) -> None:
         """Раз в 2 секунды из _observe: фокус, глаза, батарея, нагрузка, учёт времени."""
@@ -1684,16 +1839,16 @@ class Pet(QWidget):
                 self._distract_at = now
                 left = int((self.focus_until - now) // 60) + 1
                 self.gesture("grumpy", 2)
-                self.bubble.say(f"Мы же в фокусе. Осталось {left} мин — потом посмотришь.", 7000)
+                self.speak(f"Мы же в фокусе. Осталось {left} мин — потом посмотришь.", 7000)
         if self._eyes_rest and now >= self._eyes_rest:
             self._eyes_rest = None
-            self.bubble.say("Спасибо! Глаза отдохнули.", 4000)
+            self.speak("Спасибо! Глаза отдохнули.", 4000)
         if self.away:
             self._eyes_due = now + EYES_EVERY_S          # отошли — глаза и так отдыхают
         elif self.eyes_on and now >= self._eyes_due and self.loop == "idle" and not self.bubble.asking:
             self._eyes_due = now + EYES_EVERY_S
             self._eyes_rest = now + EYES_REST_S
-            self.bubble.say("20 минут прошло — посмотри вдаль 20 секунд. Я тоже закрою глазки.", EYES_REST_S * 1000)
+            self.speak("20 минут прошло — посмотри вдаль 20 секунд. Я тоже закрою глазки.", EYES_REST_S * 1000)
         if self.care_on:
             self._battery_and_cpu(now)
         if not self.away and idle < 60 and process:
@@ -1704,12 +1859,12 @@ class Pet(QWidget):
             if (datetime.datetime.now().hour >= REPORT_HOUR and self.hints
                     and load_state().get("report_day") != datetime.date.today().isoformat()):
                 save_state("report_day", datetime.date.today().isoformat())
-                self.bubble.say(usage_report(day), 15000)
+                self.speak(usage_report(day), 15000)
 
     def _say_once(self, key: str, text: str, now: float) -> None:
         if now - self._care_said.get(key, -1e9) >= CARE_EVERY_S:
             self._care_said[key] = now
-            self.bubble.say(text, 8000)
+            self.speak(text, 8000)
 
     def _battery_and_cpu(self, now: float) -> None:
         try:
@@ -1762,7 +1917,7 @@ class Pet(QWidget):
             rect, minimized = None, False
         if rect is None:                             # окно закрыли — остаёмся там, где были
             self.unpin()
-            self.bubble.say("Окно закрылось — посижу здесь.", 4000)
+            self.speak("Окно закрылось — посижу здесь.", 4000)
             return
         if minimized:                                # окно свернули — Кай прячется вместе с ним
             if self.isVisible():
@@ -1855,7 +2010,7 @@ class Pet(QWidget):
             menu.addAction("Остановить фокус").triggered.connect(lambda _c=False: self.stop_focus())
         else:
             menu.addAction(f"Фокус {FOCUS_MIN} минут").triggered.connect(lambda _c=False: self.start_focus())
-        menu.addAction("Отчёт за сегодня").triggered.connect(lambda _c=False: self.bubble.say(self.today_report(), 15000))
+        menu.addAction("Отчёт за сегодня").triggered.connect(lambda _c=False: self.speak(self.today_report(), 15000))
         menu.addSeparator()
         dress = menu.addMenu("Внешность")
         current = self._pending_look or self._export_look or self.chosen
@@ -1869,9 +2024,11 @@ class Pet(QWidget):
         things = dress.addMenu("Аксессуары")
         worn = set(self.look["acc"])
         for name, (ru, _slot) in all_accessories().items():
-            action = things.addAction(ru)
+            need = self.locked(name)
+            action = things.addAction(f"{ru} — на {need}-м ♥" if need else ru)
             action.setCheckable(True)
             action.setChecked(name in worn)
+            action.setEnabled(not need)
             action.triggered.connect(lambda on, n=name: self.change_look({"wear": n} if on else {"remove": n}))
         things.addSeparator()
         things.addAction("Свои вещи (папка)…").triggered.connect(lambda _c=False: self.open_accessories())
@@ -1949,7 +2106,7 @@ class Pet(QWidget):
             if self._export is None:
                 self._start_export(self.look, announce=True)
             else:
-                self.bubble.say("Подгонку запомнил — применю, как только допереодеваюсь.", 6000)
+                self.speak("Подгонку запомнил — применю, как только допереодеваюсь.", 6000)
 
     def _preview_base(self) -> QImage:
         """Кай в нынешнем образе, но без своих вещей — на нём примеряем."""
@@ -1985,7 +2142,7 @@ class Pet(QWidget):
         folder = accessories_dir()
         folder.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
-        self.bubble.say("Положи сюда SVG: head-бант.svg, neck-галстук.svg или face-маска.svg", 10000)
+        self.speak("Положи сюда SVG: head-бант.svg, neck-галстук.svg или face-маска.svg", 10000)
 
     def _show_menu(self, menu: QMenu, pos: QPoint) -> None:
         menu.exec(pos)
