@@ -1031,3 +1031,54 @@ def test_meow_voice_for_kai_lines_only(pet, played):
     assert played == []
     for name in ("chirp1", "chirp2", "chirp3"):
         assert (pet_module.ASSETS / "sounds" / f"{name}.wav").is_file()
+
+
+# --- одежда и костюмы ---
+def test_costume_replaces_hat_and_clothes_last_wins():
+    n = pet_module.normalize_look
+    assert n({"acc": ["hat", "tshirt", "shark"]})["acc"] == ["shark"]               # капюшон вместо шапки и одежды
+    assert n({"acc": ["shark", "hat"]})["acc"] == ["hat"]                          # надели шапку — костюм снят
+    assert n({"acc": ["shark", "glasses", "scarf"]})["acc"] == ["glasses", "scarf", "shark"]   # очки и шарф — можно
+    assert n({"acc": ["hoodie", "tuxedo"]})["acc"] == ["tuxedo"]                    # одна одежда за раз
+    assert n({"acc": ["hoodie", "crown"]})["acc"] == ["crown", "hoodie"]
+    assert len([k for k, (_ru, slot) in pet_module.ACCESSORIES.items() if slot in ("body", "costume")]) == 12
+
+
+def test_wardrobe_menu_has_clothes_and_costumes_sections(pet, monkeypatch):
+    menus = {}
+
+    def walk(menu, path=""):
+        for a in menu.actions():
+            if a.menu():
+                walk(a.menu(), a.text())
+            else:
+                menus.setdefault(path, []).append(a.text())
+    monkeypatch.setattr(pet, "_show_menu", lambda menu, pos: walk(menu))
+
+    class Ev:
+        def globalPos(self):
+            return QPoint(0, 0)
+    pet.contextMenuEvent(Ev())
+    assert "Акулёнок" in menus["Костюмы"] and "Лягушонок" in menus["Костюмы"]
+    assert "Худи" in menus["Одежда"] and "Плащ героя" in menus["Одежда"]
+    assert "Шарфик" in menus["Аксессуары"] and "Худи" not in menus["Аксессуары"]
+
+
+@pytest.mark.parametrize("text, op", [
+    ("надень костюм акулы", {"wear": "shark"}), ("стань акулёнком", {"wear": "shark"}),
+    ("будь пчёлкой", {"wear": "bee"}), ("надень костюм динозавра", {"wear": "dino"}),
+    ("сними костюм акулы", {"remove": "shark"}), ("надень худи", {"wear": "hoodie"}),
+    ("надень пижаму", {"wear": "pajama"}), ("надень плащ", {"wear": "cape"}), ("стань лисёнком", {"kind": "fox"}),
+])
+def test_clothes_by_words(text, op):
+    from kai_pet import commands
+    assert commands.parse(text).look == op
+
+
+def test_custom_svg_can_go_on_the_body(tmp_path, monkeypatch):
+    folder = tmp_path / "acc"
+    folder.mkdir()
+    (folder / "body-футболка.svg").write_text("<svg/>", encoding="utf-8")
+    monkeypatch.setenv("KAI_ACCESSORIES", str(folder))
+    mine = pet_module.custom_accessories()
+    assert [slot for _n, slot, _f in mine.values()] == ["body"]

@@ -131,16 +131,24 @@ COLORS = {"gray": "Серый", "ginger": "Рыжий", "graphite": "Графи�
 ACCESSORIES = {"scarf": ("Шарфик", "neck"), "hat": ("Шапочка", "head"), "glasses": ("Очки", "face"),
                "headphones": ("Наушники", "head"), "crown": ("Корона", "head"),
                "sunglasses": ("Тёмные очки", "face"), "umbrella": ("Зонтик", "hand"),
-               "bow": ("Бантик", "head"), "bowtie": ("Бабочка", "neck"), "flowers": ("Венок", "head")}
+               "bow": ("Бантик", "head"), "bowtie": ("Бабочка", "neck"), "flowers": ("Венок", "head"),
+               # одежда (те же имена, что CLOTHES в character/kai.js)
+               "tshirt": ("Футболка", "body"), "hoodie": ("Худи", "body"), "sweater": ("Свитер", "body"),
+               "raincoat": ("Дождевик", "body"), "tuxedo": ("Смокинг", "body"), "pajama": ("Пижама", "body"),
+               "overalls": ("Комбинезон", "body"), "cape": ("Плащ героя", "body"),
+               # костюмы целиком (COSTUMES): капюшон вместо шапки, комбинезон вместо одежды
+               "shark": ("Акулёнок", "costume"), "dino": ("Динозаврик", "costume"), "bee": ("Пчёлка", "costume"),
+               "frog": ("Лягушонок", "costume")}
+WARDROBE_MENUS = {"body": "Одежда", "costume": "Костюмы"}   # остальные места — в «Аксессуарах»
 UNLOCKS = {"bow": 2, "bowtie": 3, "flowers": 4}     # награды за дружбу: вещь → на каком сердечке открывается
 FIDGETS = ("wash", "chasetail", "stretch", "yawn")  # мелочи от скуки
 FIDGET_EVERY_S = (150, 360)                          # раз в 2,5–6 минут, когда ничего не происходит
 MISS_AFTER_H = 24                                    # не гладили и не кормили сутки — скучает
 DEFAULT_LOOK = {"kind": "cat", "color": "gray", "acc": []}
-SLOTS = ("head", "neck", "face", "hand")
+SLOTS = ("head", "neck", "face", "hand", "body")   # куда можно класть свои SVG
 CUSTOM_MAX_BYTES = 2_000_000  # своя вещь — картинка, а не фотоальбом
 # Куда ставить скачанную вещь в кадре 256: x, y, ширина, высота, выравнивание (шапка садится на макушку).
-SLOT_BOX = {"head": (68, 34, 120, 92, "xMidYMax"), "neck": (66, 166, 124, 44, "xMidYMid"),
+SLOT_BOX = {"body": (60, 170, 136, 62, "xMidYMid"), "head": (68, 34, 120, 92, "xMidYMax"), "neck": (66, 166, 124, 44, "xMidYMid"),
             "face": (76, 124, 104, 56, "xMidYMid"), "hand": (164, 140, 84, 92, "xMidYMid")}
 SVG_NS, XLINK_NS = "http://www.w3.org/2000/svg", "http://www.w3.org/1999/xlink"
 _BG_ID = re.compile(r"^(?:background|bg|фон)", re.I)
@@ -833,7 +841,13 @@ def normalize_look(look) -> dict:
     known = all_accessories()
     for item in look.get("acc") or []:
         if item in known:
-            slots[known[item][1]] = item
+            slot = known[item][1]
+            if slot == "costume":              # костюм заменяет и шапку, и одежду — последнее надетое побеждает
+                slots.pop("head", None)
+                slots.pop("body", None)
+            elif slot in ("head", "body"):
+                slots.pop("costume", None)
+            slots[slot] = item
     return {"kind": look.get("kind") if look.get("kind") in KINDS else "cat",
             "color": look.get("color") if look.get("color") in COLORS else "gray",
             "acc": sorted(slots.values())}
@@ -2021,11 +2035,12 @@ class Pet(QWidget):
                 action.setCheckable(True)
                 action.setChecked(current[key] == name)
                 action.triggered.connect(lambda _c=False, k=key, n=name: self.change_look({k: n}))
+        groups = {slot: dress.addMenu(title) for slot, title in WARDROBE_MENUS.items()}
         things = dress.addMenu("Аксессуары")
         worn = set(self.look["acc"])
-        for name, (ru, _slot) in all_accessories().items():
+        for name, (ru, slot) in all_accessories().items():
             need = self.locked(name)
-            action = things.addAction(f"{ru} — на {need}-м ♥" if need else ru)
+            action = groups.get(slot, things).addAction(f"{ru} — на {need}-м ♥" if need else ru)
             action.setCheckable(True)
             action.setChecked(name in worn)
             action.setEnabled(not need)

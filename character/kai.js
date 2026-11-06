@@ -30,6 +30,20 @@ const ACCESSORIES = { scarf: { ru: 'Шарфик', slot: 'neck' }, hat: { ru: '�
   glasses: { ru: 'Очки', slot: 'face' }, headphones: { ru: 'Наушники', slot: 'head' }, crown: { ru: 'Корона', slot: 'head' },
   sunglasses: { ru: 'Тёмные очки', slot: 'face' }, umbrella: { ru: 'Зонтик', slot: 'hand' },
   bow: { ru: 'Бантик', slot: 'head' }, bowtie: { ru: 'Бабочка', slot: 'neck' }, flowers: { ru: 'Венок', slot: 'head' } };
+// Одежда (slot body): ткань по низу тела, под мордочкой. top — где начинается ворот.
+const CLOTHES = {
+  tshirt: { ru: 'Футболка', color: '#E05A47', top: 184 }, hoodie: { ru: 'Худи', color: '#7C6CF2', top: 180 },
+  sweater: { ru: 'Свитер', color: '#4FA3A5', top: 180 }, raincoat: { ru: 'Дождевик', color: '#F2C14E', top: 182 },
+  tuxedo: { ru: 'Смокинг', color: '#33383C', top: 182 }, pajama: { ru: 'Пижама', color: '#8FB8E8', top: 184 },
+  overalls: { ru: 'Комбинезон', color: '#4A78B5', top: 198 }, cape: { ru: 'Плащ героя', color: '#C8323C', top: 0 },
+};
+// Костюмы-кигуруми (slot costume): капюшон с вырезом под мордочку, комбинезон и детали. Свои рисунки в стиле Кая.
+const COSTUMES = {
+  shark: { ru: 'Акулёнок', color: '#7FA6C4', belly: '#F4F1EA' }, dino: { ru: 'Динозаврик', color: '#7DBF6A', belly: '#E8F3C8' },
+  bee: { ru: 'Пчёлка', color: '#F2C14E', belly: '#F2C14E' }, frog: { ru: 'Лягушонок', color: '#79B85A', belly: '#E3F1C6' },
+};
+for (const k in CLOTHES) ACCESSORIES[k] = { ru: CLOTHES[k].ru, slot: 'body' };
+for (const k in COSTUMES) ACCESSORIES[k] = { ru: COSTUMES[k].ru, slot: 'costume' };
 // Свои вещи из папки accessories питомца: { id: { slot: 'head' | 'neck' | 'face', svg: '<svg viewBox="0 0 256 256">…' } }
 const CUSTOM = {};
 const LOOK = { kind: 'cat', color: 'gray', acc: [] };   // текущий образ; svg(..., { look }) может переопределить
@@ -632,11 +646,84 @@ function svg(pose, opt = {}) {
     `<path d="M190,58 L190,214 Q190,226 179,226" style="fill:none"/>` +
     `<path d="M128,62 Q138,14 190,12 Q242,14 252,62 Q237,52 221,62 Q206,52 190,62 Q174,52 159,62 Q143,52 128,62 Z" style="fill:${ACC_COLOR.umbrella}"/></g>` : '';
 
+  // ── Одежда и костюмы
+  const outfitKey = [...wear].find(a => CLOTHES[a]), costumeKey = [...wear].find(a => COSTUMES[a]);
+  const inBody = inner => `<g clip-path="url(#${id}-body)">${inner}</g>`;     // ткань не вылезает за контур тела
+  const reline = `<path d="${BODY}" style="${outline(OUT)}"/>`;              // контур тела поверх ткани
+  let clothes = '', back = '', hood = '';
+  if (costumeKey) {
+    const C = COSTUMES[costumeKey];
+    const stripes = costumeKey === 'bee' ? `<g style="fill:${ink}"><rect x="40" y="190" width="176" height="9"/><rect x="40" y="211" width="176" height="9"/></g>` : '';
+    clothes = inBody(`<rect x="40" y="172" width="176" height="64" style="fill:${C.color}"/>` +
+      `<ellipse cx="128" cy="208" rx="36" ry="20" style="fill:${C.belly}"/>${stripes}`) + reline;
+    const opening = 'M74,154 A54,40 0 1,0 182,154 A54,40 0 1,0 74,154 Z';   // вырез под мордочку (evenodd)
+    let top = '', under = '';
+    if (costumeKey === 'shark') {
+      top = `<path d="M110,80 L142,36 L152,82 Z" style="fill:${C.color};stroke:${ink};stroke-width:4;stroke-linejoin:round"/>`;
+      let teeth = '';
+      for (let i = 0; i < 9; i++) {                         // белые зубки по верхнему краю выреза
+        const a = Math.PI * (1.12 + 0.76 * i / 8), x = 128 + 54 * Math.cos(a), y = 154 + 40 * Math.sin(a);
+        const nx = 128 + 44 * Math.cos(a), ny = 154 + 31 * Math.sin(a), side = 5;
+        teeth += `<path d="M${f(x - side * Math.sin(a))},${f(y + side * Math.cos(a))} L${f(nx)},${f(ny)} L${f(x + side * Math.sin(a))},${f(y - side * Math.cos(a))} Z"/>`;
+      }
+      top += `<g style="fill:#FFFFFF;stroke:${ink};stroke-width:2;stroke-linejoin:round">${teeth}</g>` +
+        `<g style="fill:none;stroke:${ink};stroke-width:2.5;stroke-linecap:round;opacity:.6"><path d="M62,146 Q58,154 62,162"/><path d="M68,140 Q63,152 68,166"/>` +
+        `<path d="M194,146 Q198,154 194,162"/><path d="M188,140 Q193,152 188,166"/></g>`;
+      back = `<path d="M176,208 L228,172 Q218,204 236,236 Z" style="fill:${C.color};stroke:${ink};stroke-width:4;stroke-linejoin:round"/>`;
+    } else if (costumeKey === 'dino') {
+      under = `<g style="fill:#4E8B3A;stroke:${ink};stroke-width:3;stroke-linejoin:round">` +
+        [[66, 112, -40], [88, 86, -22], [128, 72, 0], [168, 86, 22], [190, 112, 40]].map(([x, y, r]) =>
+          `<path d="M-10,8 L0,-20 L10,8 Z" transform="translate(${x} ${y}) rotate(${r})"/>`).join('') + '</g>';
+      back = `<path d="M172,198 Q226,200 240,234 Q204,230 168,224 Z" style="fill:${C.color};stroke:${ink};stroke-width:4;stroke-linejoin:round"/>`;
+    } else if (costumeKey === 'bee') {
+      under = `<g style="fill:none;stroke:${ink};stroke-width:3.5;stroke-linecap:round"><path d="M110,82 Q102,62 94,48"/><path d="M146,82 Q154,62 162,48"/></g>` +
+        `<g style="fill:${ink}"><circle cx="94" cy="46" r="6"/><circle cx="162" cy="46" r="6"/></g>`;
+      back = `<g style="fill:#DDEEFF;fill-opacity:.85;stroke:${ink};stroke-width:3"><ellipse cx="58" cy="142" rx="24" ry="15" transform="rotate(-30 58 142)"/>` +
+        `<ellipse cx="198" cy="142" rx="24" ry="15" transform="rotate(30 198 142)"/></g>`;
+    } else if (costumeKey === 'frog') {
+      top = [100, 156].map(x => `<circle cx="${x}" cy="84" r="17" style="fill:${C.color};stroke:${ink};stroke-width:4"/>` +
+        `<circle cx="${x}" cy="82" r="9" style="fill:#FFFFFF;stroke:${ink};stroke-width:2"/><circle cx="${x + 1}" cy="83" r="4.5" style="fill:${ink}"/>`).join('');
+      top = top.replace(/cy="84"/g, 'cy="76"').replace(/cy="82"/g, 'cy="74"').replace(/cy="83"/g, 'cy="75"');
+    }
+    hood = `<g id="costume-hood" transform="${tilt}">${under}` +
+      `<path d="M50,178 C38,118 70,74 128,72 C186,74 218,118 206,178 Q128,198 50,178 Z ${opening}" style="fill:${C.color};fill-rule:evenodd;stroke:${ink};stroke-width:${OUT};stroke-linejoin:round"/>` +
+      `${top}</g>`;
+  } else if (outfitKey) {
+    const C = CLOTHES[outfitKey], t = C.top;
+    if (outfitKey === 'cape') {
+      back = `<path d="M84,168 Q30,214 44,242 L212,242 Q226,214 172,168 Z" style="fill:${C.color};stroke:${ink};stroke-width:4;stroke-linejoin:round"/>`;
+      clothes = `<path d="M92,178 Q128,192 164,178" style="fill:none;stroke:${C.color};stroke-width:6;stroke-linecap:round"/>` +
+        `<circle cx="128" cy="187" r="6" style="fill:#F2C14E;stroke:${ink};stroke-width:2.5"/>`;
+    } else {
+      let d = '';
+      if (outfitKey === 'tshirt') d = `<path d="M108,${t} Q128,${t + 12} 148,${t}" style="fill:none;stroke:${ink};stroke-width:3"/>` +
+        `<path d="M128,${t + 30} m-7,0 a4.5,4.5 0 0,1 7,-3 a4.5,4.5 0 0,1 7,3 q0,5 -7,10 q-7,-5 -7,-10 z" style="fill:#FFFFFF;opacity:.85"/>`;
+      if (outfitKey === 'hoodie') d = `<path d="M104,206 L152,206 L146,224 L110,224 Z" style="fill:none;stroke:${ink};stroke-width:3;opacity:.55"/>` +
+        `<path d="M118,${t + 3} L116,198 M138,${t + 3} L140,198" style="stroke:${cream};stroke-width:3;stroke-linecap:round"/>`;
+      if (outfitKey === 'sweater') d = `<g style="fill:${cream};opacity:.55"><rect x="40" y="195" width="176" height="6"/><rect x="40" y="212" width="176" height="6"/></g>` +
+        `<path d="M96,${t + 4} L104,${t - 2} L112,${t + 4} L120,${t - 2} L128,${t + 4} L136,${t - 2} L144,${t + 4} L152,${t - 2} L160,${t + 4}" style="fill:none;stroke:${cream};stroke-width:2.5"/>`;
+      if (outfitKey === 'raincoat') d = `<path d="M128,${t} L128,236" style="stroke:${ink};stroke-width:2.5;opacity:.6"/>` +
+        `<g style="fill:${cream};stroke:${ink};stroke-width:1.5">${[198, 212, 226].map(y => `<circle cx="136" cy="${y}" r="3.5"/>`).join('')}</g>`;
+      if (outfitKey === 'tuxedo') d = `<path d="M110,${t} L128,232 L146,${t} Z" style="fill:#FFFFFF"/>` +
+        `<path d="M110,${t} L122,214 M146,${t} L134,214" style="stroke:${ink};stroke-width:2.5"/>` +
+        `<g style="fill:${ink}">${[200, 214].map(y => `<circle cx="128" cy="${y}" r="2.5"/>`).join('')}</g>`;
+      if (outfitKey === 'pajama') d = `<g style="fill:${cream};opacity:.9">${[[86, 200], [122, 214], [160, 198], [100, 226], [150, 226]].map(([x, y]) => `<path d="${star(x, y, 5)}"/>`).join('')}</g>`;
+      if (outfitKey === 'overalls') d = `<g style="fill:#F2C14E;stroke:${ink};stroke-width:1.5"><circle cx="106" cy="${t + 5}" r="4"/><circle cx="150" cy="${t + 5}" r="4"/></g>` +
+        `<rect x="114" y="${t + 10}" width="28" height="14" rx="3" style="fill:none;stroke:${cream};stroke-width:2.5;opacity:.7"/>`;
+      clothes = inBody(`<rect x="40" y="${t}" width="176" height="${236 - t}" style="fill:${C.color}"/>${d}` +
+        `<path d="M40,${t} L216,${t}" style="stroke:${ink};stroke-width:3"/>`) + reline +
+        (outfitKey === 'overalls' ? `<path d="M104,${t} L104,180 M152,${t} L152,180" style="stroke:${C.color};stroke-width:7;stroke-linecap:round"/>` : '');
+    }
+  }
+  const dressed = outfitKey || costumeKey;
+  if (dressed) clothes = `<g id="acc-${dressed}">${clothes}</g>`;
+
   const flip = p.facing < 0 ? 'translate(256 0) scale(-1 1) ' : '';
   const T = `${flip}translate(0 ${f(p.y)}) rotate(${f(p.rot)} 128 228) translate(128 228) scale(${f(p.sx)} ${f(p.sy)}) translate(-128 -228)`;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}" width="${size}" height="${size}">` +
-    `<defs><clipPath id="${id}-ear"><path d="${E.out}"/></clipPath></defs>` +
-    `${bedBack}<g id="kai" transform="${T}">${tail}<g id="ears" transform="${tilt}">${ear(-1)}${ear(1)}</g>${body}${spark}${scarf}${bowtie}${feet}${umbrella}${arm(-1)}${arm(1)}${blanket}${heart}${face}${treat}${hat}${mine}</g>${bedBase}${zzz}${sign}</svg>`;
+    `<defs><clipPath id="${id}-ear"><path d="${E.out}"/></clipPath><clipPath id="${id}-body"><path d="${BODY}"/></clipPath></defs>` +
+    `${bedBack}<g id="kai" transform="${T}">${back}${costumeKey ? '' : tail}${costumeKey ? '' : `<g id="ears" transform="${tilt}">${ear(-1)}${ear(1)}</g>`}` +
+    `${body}${dressed ? '' : spark}${clothes}${hood}${scarf}${bowtie}${feet}${umbrella}${arm(-1)}${arm(1)}${blanket}${heart}${face}${treat}${costumeKey ? '' : hat}${mine}</g>${bedBase}${zzz}${sign}</svg>`;
 }
 
 // ── Публичный API
@@ -676,6 +763,6 @@ function mount(el, opts = {}) {
   };
 }
 
-const Kai = { PALETTE, PALETTES, COLOR_NAMES, KINDS, ACCESSORIES, CUSTOM, SIGN, LOOK, lookId, SIZE, BASE, STATES, ANIMS, LOOKS, expand, blend, pose, svg, frame, frames, mount };
+const Kai = { PALETTE, PALETTES, COLOR_NAMES, KINDS, ACCESSORIES, CLOTHES, COSTUMES, CUSTOM, SIGN, LOOK, lookId, SIZE, BASE, STATES, ANIMS, LOOKS, expand, blend, pose, svg, frame, frames, mount };
 if (typeof module !== 'undefined' && module.exports) module.exports = Kai; else root.Kai = Kai;
 })(this);

@@ -84,6 +84,9 @@ try {
     // Гардероб: все виды во всех цветах и все аксессуары
     await saveDoc('wardrobe_kinds_colors.png', `grid(Object.keys(Kai.KINDS).flatMap(k => Object.keys(Kai.PALETTES).map(c =>
       Kai.svg({}, { look: { kind: k, color: c, acc: [] } }))), 8)`);
+    // Одежда и костюмы
+    await saveDoc('wardrobe_clothes.png', `grid([...Object.keys(Kai.CLOTHES), ...Object.keys(Kai.COSTUMES)].map((a, i) =>
+      Kai.svg({}, { look: { kind: Object.keys(Kai.KINDS)[i % 4], color: 'gray', acc: [a] } })), 6)`);
     await saveDoc('wardrobe_accessories.png', `grid([['scarf'], ['hat'], ['glasses'], ['headphones'], ['crown'],
       ['hat', 'scarf', 'glasses'], ['crown', 'scarf'], ['headphones', 'glasses']].map((a, i) =>
       Kai.svg({}, { look: { kind: Object.keys(Kai.KINDS)[i % 4], color: Object.keys(Kai.PALETTES)[i], acc: a } })), 4)`);

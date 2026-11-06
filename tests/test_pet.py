@@ -215,7 +215,7 @@ def test_work_hides_answer_bubble_but_keeps_question(pet):
 # --- гардероб ---
 def test_look_rules():
     from kai_pet.pet import change_look, look_id, normalize_look
-    assert normalize_look({"kind": "dragon", "color": "plaid", "acc": ["cape", "scarf"]}) == \
+    assert normalize_look({"kind": "dragon", "color": "plaid", "acc": ["jetpack", "scarf"]}) == \
         {"kind": "cat", "color": "gray", "acc": ["scarf"]}
     look = change_look(change_look({}, {"wear": "hat"}), {"wear": "crown"})
     assert look["acc"] == ["crown"]                       # на голове одна вещь

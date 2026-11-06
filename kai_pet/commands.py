@@ -24,9 +24,17 @@ class KaiAction:
 _ITEMS = {"шарф": "scarf", "шапк": "hat", "шапочк": "hat", "очк": "glasses", "очеч": "glasses",
           "наушник": "headphones", "корон": "crown", "темн": "sunglasses", "солнечн": "sunglasses",
           "солнцезащитн": "sunglasses", "зонт": "umbrella", "бант": "bow", "бабочк": "bowtie", "галстук": "bowtie",
-          "венок": "flowers", "венк": "flowers", "цветоч": "flowers", "цветы": "flowers"}
+          "венок": "flowers", "венк": "flowers", "цветоч": "flowers", "цветы": "flowers",
+          "футболк": "tshirt", "майк": "tshirt", "худи": "hoodie", "толстовк": "hoodie", "кофт": "sweater",
+          "свитер": "sweater", "дождевик": "raincoat", "смокинг": "tuxedo", "фрак": "tuxedo", "пижам": "pajama",
+          "комбинезон": "overalls", "плащ": "cape", "накидк": "cape", "акул": "shark", "динозавр": "dino",
+          "дино": "dino", "пчел": "bee", "пчёл": "bee", "лягуш": "frog", "жаб": "frog"}
 _ITEM_RU = {"scarf": "шарфик", "hat": "шапочку", "glasses": "очки", "headphones": "наушники", "crown": "корону",
-            "sunglasses": "тёмные очки", "umbrella": "зонтик", "bow": "бантик", "bowtie": "бабочку", "flowers": "венок"}
+            "sunglasses": "тёмные очки", "umbrella": "зонтик", "bow": "бантик", "bowtie": "бабочку", "flowers": "венок",
+            "tshirt": "футболку", "hoodie": "худи", "sweater": "свитер", "raincoat": "дождевик", "tuxedo": "смокинг",
+            "pajama": "пижаму", "overalls": "комбинезон", "cape": "плащ героя", "shark": "костюм акулёнка",
+            "dino": "костюм динозаврика", "bee": "костюм пчёлки", "frog": "костюм лягушонка"}
+_COSTUMES = {"shark", "dino", "bee", "frog"}
 _KINDS = {"лис": "fox", "зай": "bunny", "зайч": "bunny", "кролик": "bunny", "миш": "bear", "медвед": "bear",
           "кот": "cat", "кош": "cat"}
 _KIND_RU = {"fox": "лисёнком", "bunny": "зайкой", "bear": "мишкой", "cat": "котиком"}
@@ -48,10 +56,10 @@ def _wardrobe(t: str) -> KaiAction | None:
         return KaiAction("wave", "Я снова прежний!", 1, {"reset": True})
     if re.search(r"\b(?:переоденься|смени\s+(?:образ|вид|наряд|одежду)|удиви\s+(?:меня\s+)?нарядом)\b", t):
         return KaiAction("wave", "Переодеваюсь!", 1, {"random": True})
-    m = re.search(r"\b(?:надень|одень|нацепи|примерь)\s+(?:(?:свой|свои|свою|мне)\s+)?(\w+)", t)
+    m = re.search(r"\b(?:надень|одень|нацепи|примерь)\s+(?:(?:свой|свои|свою|мне)\s+)?(?:костюм\w*\s+)?(\w+)", t)
     if m and (item := _stem(m.group(1), _ITEMS)):
         return KaiAction("wave", f"Надеваю {_ITEM_RU[item]}!", 1, {"wear": item})
-    m = re.search(r"\b(?:сними|сбрось)\s+(?:(?:свой|свои|свою|с себя)\s+)?(\w+)", t)
+    m = re.search(r"\b(?:сними|сбрось)\s+(?:(?:свой|свои|свою|с себя)\s+)?(?:костюм\w*\s+)?(\w+)", t)
     if m:
         if m.group(1) in ("все", "всё", "аксессуары", "наряд"):
             return KaiAction("wave", "Снимаю всё лишнее.", 1, {"remove": "all"})
@@ -63,6 +71,9 @@ def _wardrobe(t: str) -> KaiAction | None:
             return KaiAction("wave", f"Стал {_KIND_RU[kind]}!", 1, {"kind": kind})
         if color := _stem(m.group(1), _COLORS):
             return KaiAction("wave", f"Теперь я {_COLOR_RU[color]}!", 1, {"color": color})
+        item = _stem(m.group(1), _ITEMS)
+        if item in _COSTUMES:                  # «стань акулёнком» — костюм целиком
+            return KaiAction("wave", f"Надеваю {_ITEM_RU[item]}!", 1, {"wear": item})
     return None
 
 
