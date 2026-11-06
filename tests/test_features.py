@@ -1,7 +1,9 @@
 """Кай: крепление и поворот, музыка, поглаживание, печенька и дружба, сезонные образы, звуки, автозапуск, трей."""
 import datetime as dt
+import json
 import os
 import sys
+import time
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -40,6 +42,9 @@ def pet(monkeypatch, tmp_path, played):
     monkeypatch.setattr(pet_module, "active_window_rect", lambda: None)
     monkeypatch.setattr(pet_module, "input_idle_s", lambda: 0.0)
     monkeypatch.setattr(pet_module, "audio_peak", lambda: 0.0)
+    monkeypatch.setattr(pet_module, "battery", lambda: None)
+    monkeypatch.setattr(pet_module, "cpu_load", lambda: None)
+    monkeypatch.setenv("KAI_PET_USAGE", str(tmp_path / "usage.json"))
     monkeypatch.setattr(pet_module, "audible_apps", lambda: {"spotify.exe"})     # звучит музыкальная программа
     monkeypatch.setattr(pet_module, "window_at", lambda x, y, skip: None)      # под Каем — рабочий стол
     monkeypatch.setattr(pet_module, "background_mood", lambda app, *_: app or "idle")
@@ -751,3 +756,143 @@ def test_window_helpers_never_crash():
     assert pet_module.window_minimized(0) is False
     found = pet_module.window_at(-99999, -99999, set())
     assert found is None
+
+
+# --- фокус-режим ---
+def test_focus_timer_on_sign_and_distraction(pet, monkeypatch):
+    pet.start_focus(25)
+    assert pet.once == "like"
+    pet.once = None
+    assert pet.current() == "sign" and pet.board_text().startswith("Фокус 2")
+    pet._tick()
+    pet.grab()                                                       # таймер рисуется на табличке
+    pet._title = "Смешные котики - YouTube - Google Chrome"
+    pet._care(time.monotonic(), 0.0, "chrome.exe")
+    assert "в фокусе" in pet.bubble.text.text()
+    pet.bubble.hide()
+    pet._care(time.monotonic(), 0.0, "chrome.exe")
+    assert not pet.bubble.isVisible()                                # не чаще раза в 2 минуты
+    pet.focus_until = time.monotonic() - 1
+    pet._care(time.monotonic(), 0.0, "code.exe")
+    assert pet.focus_until is None and "Фокус окончен" in pet.bubble.text.text() and pet.once == "clap"
+
+
+def test_focus_by_words(pet):
+    assert pet.command("фокус на 40 минут") and pet.focus_until
+    assert pet.command("хватит фокуса") and pet.focus_until is None
+
+
+# --- глаза 20-20-20 ---
+def test_eye_break_every_20_minutes(pet):
+    now = time.monotonic()
+    pet._eyes_due = now - 1
+    pet._care(now, 0.0, "code.exe")
+    assert pet.current() == "calm" and "вдаль" in pet.bubble.text.text()
+    pet._care(now + pet_module.EYES_REST_S + 1, 0.0, "code.exe")
+    assert pet._eyes_rest is None and "отдохнули" in pet.bubble.text.text()
+    pet.away = True
+    pet._care(now + 5000, 0.0, "")
+    assert pet._eyes_due > now + 5000                                # отошли — отсчёт заново
+    pet.away, pet.eyes_on = False, False
+    pet._eyes_due = now - 1
+    pet._care(now, 0.0, "code.exe")
+    assert pet._eyes_rest is None                                    # выключено в настройках
+
+
+# --- заметка на окне ---
+def test_window_note_goes_away_with_window(pet, monkeypatch):
+    monkeypatch.setattr(pet_module, "window_at", lambda x, y, skip: (5, "Отчёт.xlsx — Excel"))
+    alive = {"v": True}
+    monkeypatch.setattr(pet_module, "window_rect", lambda h: (0, 0, 3000, 3000) if alive["v"] else None)
+    monkeypatch.setattr(pet_module, "window_minimized", lambda h: False)
+    pet.move(500, 400)
+    pet._dropped()
+    pet.set_window_note("Сдать отчёт до 18:00")
+    assert pet.board_text() == "Сдать отчёт до 18:00" and pet.current() == "sign"
+    alive["v"] = False
+    pet._follow_window()
+    assert pet.sign_text == "" and pet._pin is None                  # окно закрыли — заметка ушла
+    pet.set_sign("Обычная табличка")
+    pet.move(500, 400)
+    alive["v"] = True
+    pet._dropped()
+    pet.unpin()
+    assert pet.sign_text == "Обычная табличка"                       # обычная табличка остаётся
+
+
+# --- батарея и нагрузка ---
+def test_battery_and_cpu_care(pet, monkeypatch):
+    now = time.monotonic()
+    monkeypatch.setattr(pet_module, "battery", lambda: (12, False))
+    monkeypatch.setattr(pet_module, "cpu_load", lambda: 20.0)
+    pet._battery_and_cpu(now)
+    assert "Батарея 12%" in pet.bubble.text.text()
+    pet.bubble.hide()
+    pet._battery_and_cpu(now + 5)
+    assert not pet.bubble.isVisible()                                # не чаще раза в 10 минут
+    monkeypatch.setattr(pet_module, "battery", lambda: (13, True))
+    pet._battery_and_cpu(now + 6)
+    assert "зарядка" in pet.bubble.text.text() and pet.once == "purr"
+    monkeypatch.setattr(pet_module, "cpu_load", lambda: 97.0)
+    pet._battery_and_cpu(now + 10)
+    assert pet._hot_since == now + 10
+    pet._battery_and_cpu(now + 10 + pet_module.CPU_HOT_S)
+    assert "жарко" in pet.bubble.text.text()
+
+
+def test_system_readers_never_crash():
+    b = pet_module.battery()
+    assert b is None or (0 <= b[0] <= 100 and isinstance(b[1], bool))
+    pet_module.cpu_load()
+    load = pet_module.cpu_load()
+    assert load is None or 0 <= load <= 100
+
+
+# --- отчёт за день ---
+def test_usage_counts_and_report(pet, monkeypatch, tmp_path):
+    for _ in range(1800):                                            # час в коде (по 2 с)
+        pet._care(time.monotonic(), 0.0, "Code.exe")
+    for _ in range(600):
+        pet._care(time.monotonic(), 0.0, "chrome.exe")
+    pet._care(time.monotonic(), 999.0, "chrome.exe")                 # отошли — не считается
+    report = pet.today_report()
+    assert report.startswith("Сегодня за компьютером 1 ч 20 мин") and "VS Code 1 ч 0 мин" in report
+    pet._save_usage()
+    saved = json.loads((tmp_path / "usage.json").read_text(encoding="utf-8"))
+    assert saved[dt.date.today().isoformat()]["code.exe"] == 3600
+
+
+def test_usage_keeps_a_week_and_reports_once_in_the_evening(pet, monkeypatch, tmp_path):
+    pet._usage = {f"2026-10-{d:02d}": {"a.exe": 60} for d in range(1, 15)}
+    pet._save_usage()
+    assert len(pet._usage) == 7
+    assert pet_module.usage_report({}) .startswith("Сегодня ты почти")
+
+    class Evening(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 11, 6, 21, 30)
+    monkeypatch.setattr(pet_module.datetime, "datetime", Evening)
+    pet._care(time.monotonic(), 0.0, "code.exe")
+    assert "Сегодня" in pet.bubble.text.text()
+    pet.bubble.hide()
+    pet._care(time.monotonic(), 0.0, "code.exe")
+    assert not pet.bubble.isVisible()                                # один раз за вечер
+
+
+def test_menu_has_care_items(pet, monkeypatch):
+    titles = []
+
+    def walk(menu):
+        for a in menu.actions():
+            titles.append(a.text())
+            if a.menu():
+                walk(a.menu())
+    monkeypatch.setattr(pet, "_show_menu", lambda menu, pos: walk(menu))
+
+    class Ev:
+        def globalPos(self):
+            return QPoint(0, 0)
+    pet.contextMenuEvent(Ev())
+    for t in ("Фокус 25 минут", "Отчёт за сегодня", "Отдых для глаз (20-20-20)", "Батарея и нагрузка"):
+        assert t in titles, t

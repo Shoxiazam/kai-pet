@@ -17,6 +17,7 @@ class KaiAction:
     times: int = 2  # сколько раз проиграть анимацию
     look: dict | None = None  # команда гардеробу: {"kind"}, {"color"}, {"wear"}, {"remove"}, {"reset"}, {"random"}
     sign: str | None = None   # текст таблички; "" — убрать, None — табличку не трогать
+    focus: int | None = None  # фокус-режим: минуты; 0 — выключить, None — не трогать
 
 
 # Гардероб: основа слова → имя в kai.js. Кай рисует только свои образы.
@@ -152,6 +153,9 @@ _EMOTIONS = [
 ]
 _SIGN = re.compile(r"^(?:покажи|подними|держи|возьми|напиши|сделай)\s+(?:мне\s+)?(?:на\s+)?табличк\w*"
                    r"(?:\s+(?:с\s+)?(?:надписью|текстом|словами))?")
+_FOCUS = re.compile(r"^(?:включи\s+|начни\s+|давай\s+)?(?:режим\s+)?(?:фокус\w*|помодоро|сосредоточ\w*)"
+                    r"(?:\s+(?:на\s+)?(\d{1,3})\s*мин\w*)?[\s!.]*$")
+_FOCUS_OFF = re.compile(r"^(?:выключи|останови|хватит|стоп|закончи)\s+(?:режим\s+)?(?:фокус\w*|помодоро)[\s!.]*$")
 _SIGN_OFF = re.compile(r"^(?:убери|опусти|выброси|спрячь)\s+табличк\w*[\s!.]*$")
 _ANY_GESTURE = re.compile(rf"{_VERB}\s+(?:какой[- ]нибудь\s+|любой\s+|свой\s+|какой[- ]то\s+)?жест")
 
@@ -168,6 +172,12 @@ def parse(text: str) -> KaiAction | None:
     """Команда Каю или None, если это не ему (например, просьба отправить сообщение)."""
     original = _ADDRESS.sub("", text.strip())          # имена с заглавной берём из исходной фразы
     t = original.lower().replace("ё", "е")
+    if _FOCUS_OFF.search(t):
+        return KaiAction("wave", "Фокус выключен.", 1, focus=0)
+    m = _FOCUS.search(t)
+    if m:
+        minutes = int(m.group(1)) if m.group(1) else 25
+        return KaiAction("like", f"Фокус на {minutes} мин!", 1, focus=minutes)
     if _SIGN_OFF.search(t):
         return KaiAction("wave", "Убрал табличку.", 1, sign="")
     m = _SIGN.search(t)                                 # раньше «напиши»: это не сообщение, а табличка

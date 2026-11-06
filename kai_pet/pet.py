@@ -103,6 +103,22 @@ _MUSIC_TITLE = re.compile(r"music|музык|spotify|soundcloud|песн|\bsong|
                           r"lo-?fi|\bbeats?\b|\bost\b|саундтрек|soundtrack|концерт|concert|\bdj\b")
 _TALK_TITLE = re.compile(r"podcast|подкаст|interview|интервью|lecture|лекци|урок|tutorial|обзор|review|\bnews\b|"
                          r"новост|стрим|\bstream|vlog|влог|разбор|курс|вебинар|webinar|звонок|meeting|встреча")
+# Забота: фокус, глаза, батарея, нагрузка, отчёт за день.
+FOCUS_MIN = 25
+DISTRACT = re.compile(r"youtube|instagram|tiktok|vk\.com|вконтакте|facebook|twitter|\bx\.com|reddit|twitch|netflix|"
+                      r"кинопоиск|pinterest|9gag|shorts")
+DISTRACT_EVERY_S = 120   # в фокусе напоминает не чаще
+EYES_EVERY_S = 20 * 60   # 20-20-20: каждые 20 минут — 20 секунд вдаль
+EYES_REST_S = 20
+BATTERY_LOW = 15
+CPU_HOT, CPU_HOT_S = 85, 30          # загрузка выше 85 % полминуты — «жарко»
+CARE_EVERY_S = 10 * 60               # про батарею и нагрузку — не чаще
+REPORT_HOUR = 21                     # вечером — отчёт за день (один раз)
+APP_NAMES = {"chrome.exe": "Chrome", "msedge.exe": "Edge", "firefox.exe": "Firefox", "code.exe": "VS Code",
+             "telegram.exe": "Telegram", "explorer.exe": "Проводник", "winword.exe": "Word", "excel.exe": "Excel",
+             "powerpnt.exe": "PowerPoint", "figma.exe": "Figma", "spotify.exe": "Spotify", "discord.exe": "Discord",
+             "windowsterminal.exe": "Терминал", "pycharm64.exe": "PyCharm", "notepad.exe": "Блокнот",
+             "obsidian.exe": "Obsidian", "claude.exe": "Claude", "browser.exe": "Яндекс Браузер"}
 DIPS_MAX = 0.12         # у речи между словами тишина — больше 12 % провалов, у музыки звук почти не стихает
 _TITLE_TAIL = re.compile(r"\s[-–—]\s(?:youtube|google chrome|mozilla firefox|microsoft\S*\s?edge|яндекс\s?браузер|"
                          r"opera|brave|vivaldi|vlc media player|media player)\b.*$")
@@ -390,6 +406,62 @@ def window_rect(hwnd: int) -> tuple[int, int, int, int] | None:
 
     r = _RECT()
     return (r.left, r.top, r.right, r.bottom) if user32.GetWindowRect(h, ctypes.byref(r)) else None
+
+
+def battery() -> tuple[int, bool] | None:
+    """(заряд %, на зарядке). None — батареи нет или узнать нельзя (настольный компьютер, не Windows)."""
+    if sys.platform != "win32":
+        return None
+
+    class _SPS(ctypes.Structure):
+        _fields_ = [("ac", ctypes.c_ubyte), ("flag", ctypes.c_ubyte), ("percent", ctypes.c_ubyte),
+                    ("saver", ctypes.c_ubyte), ("life", ctypes.c_ulong), ("full", ctypes.c_ulong)]
+
+    s = _SPS()
+    if not ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(s)) or s.flag & 128 or s.percent > 100:
+        return None                              # 128 — батареи нет, 255 — заряд неизвестен
+    return int(s.percent), s.ac == 1
+
+
+_cpu_prev: list = [None]
+
+
+def cpu_load() -> float | None:
+    """Загрузка процессора с прошлого вызова, 0..100. None — первый замер или не Windows."""
+    if sys.platform != "win32":
+        return None
+    idle, kernel, user = (ctypes.c_ulonglong() for _ in range(3))
+    if not ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)):
+        return None
+    now = (idle.value, kernel.value + user.value)          # kernel уже включает простой
+    prev, _cpu_prev[0] = _cpu_prev[0], now
+    if prev is None or now[1] <= prev[1]:
+        return None
+    return max(0.0, min(100.0, 100.0 * (1 - (now[0] - prev[0]) / (now[1] - prev[1]))))
+
+
+def usage_file() -> Path:
+    return Path(os.environ.get("KAI_PET_USAGE") or Path.home() / ".kai-pet-usage.json")
+
+
+def app_name(process: str) -> str:
+    p = process.lower()
+    return APP_NAMES.get(p) or (Path(p).stem[:1].upper() + Path(p).stem[1:] if p else "Другое")
+
+
+def human_time(seconds: float) -> str:
+    m = int(seconds // 60)
+    return f"{m // 60} ч {m % 60} мин" if m >= 60 else f"{max(m, 1)} мин"
+
+
+def usage_report(day: dict, top: int = 4) -> str:
+    """«Сегодня: VS Code 2 ч 10 мин, Chrome 50 мин…» — по секундам на программу."""
+    items = sorted(((s, app_name(p)) for p, s in day.items() if s >= 60), reverse=True)
+    if not items:
+        return "Сегодня ты почти не сидел за компьютером."
+    total = sum(s for s, _n in items)
+    parts = ", ".join(f"{name} {human_time(s)}" for s, name in items[:top])
+    return f"Сегодня за компьютером {human_time(total)}: {parts}."
 
 
 def window_minimized(hwnd: int) -> bool:
@@ -864,6 +936,17 @@ class Pet(QWidget):
         self._media_title = ""                            # последний ролик/трек, который был впереди
         self._pin: dict | None = None                     # окно, за которое Кай держится, и место на нём
         self._pin_hid = False                             # спрятался, потому что окно свернули
+        self.focus_until: float | None = None             # фокус-режим: когда кончится (monotonic)
+        self._distract_at = 0.0
+        self.eyes_on = bool(state.get("eyes", True))
+        self._eyes_due = time.monotonic() + EYES_EVERY_S
+        self._eyes_rest: float | None = None              # сейчас отдыхаем глазами — до этого момента
+        self.care_on = bool(state.get("care", True))
+        self._care_said: dict[str, float] = {}
+        self._hot_since: float | None = None
+        self._was_charging: bool | None = None
+        self._usage: dict = self._load_usage()
+        self._usage_saved = time.monotonic()
         self.city = str(state.get("city", ""))
         self.weather: tuple[float, int] | None = None                         # (температура, код) — когда узнали
         self._weather_announce = False
@@ -927,6 +1010,7 @@ class Pet(QWidget):
             self._export = None
         if self._run is not None:
             self._run.stop()
+        self._save_usage()
         _meter[0] = None                       # отпустить индикатор громкости, пока COM ещё работает
         _sessions[0] = None
         self.bubble.deleteLater()
@@ -1260,6 +1344,8 @@ class Pet(QWidget):
             self.change_look(act.look)
         if act.sign is not None:               # «покажи табличку Привет», «убери табличку»
             self.set_sign(act.sign)
+        if act.focus is not None:              # «фокус на 25 минут», «хватит фокуса»
+            self.start_focus(act.focus) if act.focus else self.stop_focus()
         return True
 
     # --- что делаете вы ---
@@ -1283,6 +1369,7 @@ class Pet(QWidget):
         elif (self.loop == "idle" and now - self.session_start > self.cfg.tired_after_min * 60
               and now - self.last_hint >= self.cfg.break_hint_every_min * 60):
             self._hint(BREAK_HINTS)
+        process = ""
         try:
             title, process = active_window()
             self._title = title
@@ -1293,6 +1380,7 @@ class Pet(QWidget):
         except (OSError, AttributeError) as e:   # окно закрылось на ходу — просто без эмоции программы
             log.debug("Активное окно не прочитано: %s", e)
             self.app = None
+        self._care(now, idle, process)
         if datetime.date.today() != self._today:  # наступил новый день: зима, день рождения, счётчик дней
             self._today = datetime.date.today()
             self._mark_day()
@@ -1319,7 +1407,9 @@ class Pet(QWidget):
             if time.monotonic() < self.flash[1]:
                 return self.flash[0]
             self.flash = None
-        if self.sign_text and self._has("sign"):
+        if self._eyes_rest:
+            return "calm"                      # глаза закрыты — отдыхаем вместе
+        if (self.sign_text or self.focus_until) and self._has("sign"):
             return "sign"                      # держит табличку, пока её не уберут
         c, g = self._cursor(), self.geometry()
         look = look_at(c.x() - g.center().x(), c.y() - g.center().y(), self.cfg.look_radius_px, self.size_px / 2)
@@ -1439,7 +1529,7 @@ class Pet(QWidget):
             p.scale(k, k)
             p.translate(-half, -half)
         p.drawPixmap(0, 0, self._pix)
-        if self.shown == "sign" and self.sign_text:
+        if self.shown == "sign" and self.board_text():
             self._paint_sign(p)
 
     def _paint_sign(self, p: QPainter) -> None:
@@ -1452,11 +1542,11 @@ class Pet(QWidget):
         for px in range(max(6, int(rect.height() * 0.7)), 5, -1):
             font.setPixelSize(px)
             p.setFont(font)
-            box = p.boundingRect(rect, flags, self.sign_text)
+            box = p.boundingRect(rect, flags, self.board_text())
             if box.height() <= rect.height() and box.width() <= rect.width():
                 break
         p.setPen(QColor("#3D3929"))
-        p.drawText(rect, flags, self.sign_text)
+        p.drawText(rect, flags, self.board_text())
 
     def moveEvent(self, event):
         super().moveEvent(event)
@@ -1531,10 +1621,137 @@ class Pet(QWidget):
         self.bubble.say(f"Держусь за «{short}»", 4000)
 
     def unpin(self) -> None:
-        self._pin = None
+        self._release_pin()
         if self._pin_hid:
             self._pin_hid = False
             self.show()
+
+    def _release_pin(self) -> None:
+        """Отпустил окно; заметка, приклеенная к нему, уходит вместе с окном."""
+        if self._pin and self._pin.get("note"):
+            self.set_sign("")
+        self._pin = None
+
+    def set_window_note(self, text: str) -> None:
+        """Заметка на окне: Кай держится за окно и держит табличку, пока не отпустит его."""
+        if not self._pin:
+            return
+        self._pin["note"] = bool(text.strip())
+        self.set_sign(text)
+
+    def _ask_window_note(self) -> None:
+        dlg = QInputDialog()
+        dlg.setWindowTitle("Заметка на окне")
+        dlg.setLabelText(f"Что напомнить на «{self._pin['title'][:40]}»? Уйдёт, когда отпущу окно.")
+        dlg.setTextValue(self.sign_text if self._pin.get("note") else "")
+        dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowStaysOnTopHint)
+        if dlg.exec():
+            self.set_window_note(dlg.textValue())
+
+    # --- забота: фокус, глаза, батарея, нагрузка, отчёт за день ---
+    def board_text(self) -> str:
+        """Что на табличке: таймер фокуса важнее заметки."""
+        if self.focus_until:
+            left = max(0, int(self.focus_until - time.monotonic()))
+            return f"Фокус {left // 60:02d}:{left % 60:02d}"
+        return self.sign_text
+
+    def start_focus(self, minutes: int = FOCUS_MIN) -> None:
+        minutes = max(1, min(180, int(minutes)))
+        self.focus_until = time.monotonic() + minutes * 60
+        self._distract_at = 0.0
+        self._touch()
+        self.play("like")
+        self.bubble.say(f"Фокус на {minutes} мин. Я присмотрю, чтобы ничего не отвлекало.", 5000)
+
+    def stop_focus(self, done: bool = False) -> None:
+        if not self.focus_until:
+            return
+        self.focus_until = None
+        if done:
+            self.play("clap", 2)
+            self._sound("meow")
+            self.bubble.say("Фокус окончен — ты молодец! Отдохни 5 минут.", 12000)
+        else:
+            self.bubble.say("Фокус выключен.", 3000)
+
+    def _care(self, now: float, idle: float, process: str) -> None:
+        """Раз в 2 секунды из _observe: фокус, глаза, батарея, нагрузка, учёт времени."""
+        if self.focus_until:
+            if now >= self.focus_until:
+                self.stop_focus(done=True)
+            elif DISTRACT.search(self._title.lower()) and now - self._distract_at >= DISTRACT_EVERY_S:
+                self._distract_at = now
+                left = int((self.focus_until - now) // 60) + 1
+                self.gesture("grumpy", 2)
+                self.bubble.say(f"Мы же в фокусе. Осталось {left} мин — потом посмотришь.", 7000)
+        if self._eyes_rest and now >= self._eyes_rest:
+            self._eyes_rest = None
+            self.bubble.say("Спасибо! Глаза отдохнули.", 4000)
+        if self.away:
+            self._eyes_due = now + EYES_EVERY_S          # отошли — глаза и так отдыхают
+        elif self.eyes_on and now >= self._eyes_due and self.loop == "idle" and not self.bubble.asking:
+            self._eyes_due = now + EYES_EVERY_S
+            self._eyes_rest = now + EYES_REST_S
+            self.bubble.say("20 минут прошло — посмотри вдаль 20 секунд. Я тоже закрою глазки.", EYES_REST_S * 1000)
+        if self.care_on:
+            self._battery_and_cpu(now)
+        if not self.away and idle < 60 and process:
+            day = self._usage.setdefault(datetime.date.today().isoformat(), {})
+            day[process.lower()] = day.get(process.lower(), 0) + 2
+            if now - self._usage_saved > 300:
+                self._save_usage()
+            if (datetime.datetime.now().hour >= REPORT_HOUR and self.hints
+                    and load_state().get("report_day") != datetime.date.today().isoformat()):
+                save_state("report_day", datetime.date.today().isoformat())
+                self.bubble.say(usage_report(day), 15000)
+
+    def _say_once(self, key: str, text: str, now: float) -> None:
+        if now - self._care_said.get(key, -1e9) >= CARE_EVERY_S:
+            self._care_said[key] = now
+            self.bubble.say(text, 8000)
+
+    def _battery_and_cpu(self, now: float) -> None:
+        try:
+            bat, load = battery(), cpu_load()
+        except OSError:
+            bat = load = None
+        if bat:
+            percent, charging = bat
+            if charging and self._was_charging is False:
+                self.play("purr")
+                self._say_once("charge", "Ммм, зарядка! Спасибо.", now)
+            elif not charging and percent <= BATTERY_LOW:
+                self.gesture("tired", 3)
+                self._say_once("battery", f"Батарея {percent}% — подключи зарядку, а то я усну.", now)
+            self._was_charging = charging
+        if load is not None and load >= CPU_HOT:
+            self._hot_since = self._hot_since or now
+            if now - self._hot_since >= CPU_HOT_S:
+                self.gesture("tired", 2)
+                self._say_once("cpu", f"Уф, жарко! Компьютер загружен на {load:.0f}%.", now)
+        else:
+            self._hot_since = None
+
+    def _load_usage(self) -> dict:
+        try:
+            data = json.loads(usage_file().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _save_usage(self) -> None:
+        """Только имена программ и секунды, только на этом компьютере; хранится неделя."""
+        self._usage_saved = time.monotonic()
+        keep = sorted(self._usage)[-7:]
+        self._usage = {d: self._usage[d] for d in keep}
+        try:
+            usage_file().write_text(json.dumps(self._usage), encoding="utf-8")
+        except OSError as e:
+            log.warning("Отчёт за день не сохранён: %s", e)
+
+    def today_report(self) -> str:
+        return usage_report(self._usage.get(datetime.date.today().isoformat(), {}))
 
     def _follow_pin(self) -> None:
         pin = self._pin
@@ -1584,7 +1801,7 @@ class Pet(QWidget):
         """Кая отпустили после перетаскивания: у края экрана прилипает и ложится лапками к краю,
         на окне — держится за это окно, на рабочем столе — сидит, где оставили."""
         self.dock = "free"
-        self._pin = None
+        self._release_pin()
         snap = snap_edge(self.x(), self.y(), self.size_px, self._area())
         if snap:
             x, y, edge = snap
@@ -1632,6 +1849,13 @@ class Pet(QWidget):
         menu.addAction("Табличка…").triggered.connect(lambda _c=False: self._ask_sign())
         if self.sign_text:
             menu.addAction("Убрать табличку").triggered.connect(lambda _c=False: self.set_sign(""))
+        if self._pin:
+            menu.addAction("Заметка на это окно…").triggered.connect(lambda _c=False: self._ask_window_note())
+        if self.focus_until:
+            menu.addAction("Остановить фокус").triggered.connect(lambda _c=False: self.stop_focus())
+        else:
+            menu.addAction(f"Фокус {FOCUS_MIN} минут").triggered.connect(lambda _c=False: self.start_focus())
+        menu.addAction("Отчёт за сегодня").triggered.connect(lambda _c=False: self.bubble.say(self.today_report(), 15000))
         menu.addSeparator()
         dress = menu.addMenu("Внешность")
         current = self._pending_look or self._export_look or self.chosen
@@ -1682,6 +1906,8 @@ class Pet(QWidget):
         self._toggle(settings, "Танцевать под музыку", self.dance_on, lambda on: self._set_flag("dance", "dance_on", on))
         self._toggle(settings, "Сезонные образы", self.seasonal, lambda on: self._set_flag("seasonal", "seasonal", on))
         self._toggle(settings, "Охотиться за мышкой", self.chase_on, lambda on: self._set_flag("chase", "chase_on", on))
+        self._toggle(settings, "Отдых для глаз (20-20-20)", self.eyes_on, lambda on: self._set_flag("eyes", "eyes_on", on))
+        self._toggle(settings, "Батарея и нагрузка", self.care_on, lambda on: self._set_flag("care", "care_on", on))
         weather = menu.addMenu("Погода")
         if self.weather and self.city:
             weather.addAction(f"Сейчас: {self.weather[0]:+.0f}°, {weather_words(self.weather[1])}").setEnabled(False)
