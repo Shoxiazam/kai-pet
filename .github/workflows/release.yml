@@ -1,6 +1,7 @@
 name: release
 
-# Новая версия: git tag v1.2.0 && git push origin v1.2.0 — здесь соберётся KaiPet.exe и появится в Releases.
+# Новая версия: git tag v1.2.0 && git push origin v1.2.0 — здесь соберутся установщик и портативная версия
+# и появятся в Releases. Сайт берёт последнюю версию по постоянной ссылке releases/latest/download/KaiPet-Setup.exe.
 on:
   push:
     tags: ["v*"]
@@ -9,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  exe:
+  windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,10 +20,28 @@ jobs:
       - name: Install
         run: python -m pip install -r requirements.txt -r requirements-dev.txt pyinstaller
       - name: Tests
-        run: python -m pytest -q
-      - name: Build KaiPet.exe
+        run: python -m pytest -q -o faulthandler_timeout=120
+      - name: Build Kai (folder, fast start)
         run: python build_exe.py
+      - name: Installer KaiPet-Setup.exe
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") |
+            Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { choco install innosetup -y --no-progress; $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          & $iscc /Q "/DAppVersion=$version" installer\KaiPet.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Portable zip
+        shell: pwsh
+        run: Compress-Archive -Path dist\KaiPet\* -DestinationPath dist\KaiPet-portable.zip
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/KaiPet.exe
+          files: |
+            dist/KaiPet-Setup.exe
+            dist/KaiPet-portable.zip
           generate_release_notes: true
+          body: |
+            **Скачать:** [KaiPet-Setup.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/KaiPet-Setup.exe) — установка за пару кликов, без прав администратора.
+            Без установки — KaiPet-portable.zip: распакуйте и запустите KaiPet.exe.
+            Сайт: https://shoxiazam.github.io/kai-pet/

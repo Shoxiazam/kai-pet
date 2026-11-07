@@ -48,7 +48,7 @@ log = logging.getLogger(__name__)
 
 FROZEN = bool(getattr(sys, "frozen", False))
 ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
-ASSETS = ROOT / "assets"                     # кадры: node character/export.mjs
+ASSETS = ROOT / "assets"                     # кадры: python -m kai_pet.export (или node character/export.mjs)
 # В KaiPet.exe папка с кадрами только для чтения — новые образы Кай рисует в профиль пользователя.
 LOOKS_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "KaiPet" / "looks" if FROZEN else None
 FPS = {"moods": 12}     # живые эмоции дышат медленнее, остальное 24 к/с
@@ -948,6 +948,12 @@ def weather_tip(temp: float, code: int) -> str:
     return f"{temp:+.0f}°, {weather_words(code)}" + (f" — {advice}" if advice else "")
 
 
+def exporter() -> tuple[str, list[str]] | None:
+    """Чем рисовать кадры нового образа: свой процесс с kai_pet.export (нужен только Edge или Chrome). None — нечем."""
+    from . import export
+    return export.command() if export.find_browser() else None
+
+
 def friend_level(points: int) -> int:
     return sum(points >= x for x in FRIEND_LEVELS)
 
@@ -1168,12 +1174,12 @@ class Pet(QWidget):
             self.speak(random.choice(DRESSED), 6000)
 
     def _start_export(self, look: dict, announce: bool) -> None:
-        """Кадры нового образа рисуются в фоне (≈20 с): node character/export.mjs с KAI_LOOK и KAI_OUT."""
-        node, script = shutil.which("node"), ROOT / "character" / "export.mjs"
-        if not node or not script.is_file():
-            log.warning("Кай не может переодеться: нет node или %s", script)
+        """Кадры нового образа рисуются в фоне (≈20 с): kai_pet.export с KAI_LOOK и KAI_OUT через Edge/Chrome."""
+        tool = exporter()
+        if tool is None:
+            log.warning("Кай не может переодеться: нет Edge или Chrome")
             if announce:
-                self.speak("Не получается переодеться: нужен Node.js и Edge или Chrome.", 6000)
+                self.speak("Не получается переодеться: нужен браузер Edge или Chrome.", 6000)
             return
         tmp = self.look_dir(look).with_name(look_id(look) + ".tmp")
         shutil.rmtree(tmp, ignore_errors=True)
@@ -1199,10 +1205,10 @@ class Pet(QWidget):
             env.insert("KAI_CUSTOM_FILE", str(custom_file))
         proc = QProcess(self)
         proc.setProcessEnvironment(env)
-        proc.setProgram(node)
-        proc.setArguments([str(script)])
+        proc.setProgram(tool[0])
+        proc.setArguments(tool[1])
         proc.finished.connect(lambda code, _status: self._export_done(look, tmp, code, announce))
-        # node не запустился — finished не придёт; без этого Кай «переодевался» бы вечно
+        # процесс не запустился — finished не придёт; без этого Кай «переодевался» бы вечно
         proc.errorOccurred.connect(lambda err: err == QProcess.FailedToStart and self._export_done(look, tmp, -1, announce))
         self._export, self._export_look = proc, look
         QTimer.singleShot(EXPORT_TIMEOUT_MS, lambda: proc.state() != QProcess.NotRunning and proc.kill())

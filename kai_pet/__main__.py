@@ -48,6 +48,9 @@ def tray(app: QApplication, pet: Pet) -> QSystemTrayIcon:
 
 
 def main() -> int:
+    if "--export" in sys.argv:              # KaiPet.exe --export: нарисовать кадры образа и выйти (kai_pet.export)
+        from .export import main as export_main
+        return export_main()
     _logging()
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)

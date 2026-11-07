@@ -1,6 +1,6 @@
 """Друг Кая — второй питомец со своим характером. Сидит рядом, болтает с Каем, играет, ссорится и мирится.
 
-Кадры друга рисуются тем же character/export.mjs, но в свою папку (friend/<образ>): уборка образов Кая их не трогает.
+Кадры друга рисуются тем же kai_pet.export, но в свою папку (friend/<образ>): уборка образов Кая их не трогает.
 """
 from __future__ import annotations
 
@@ -331,10 +331,10 @@ class Friends(QObject):
         self._release()
 
     def _draw(self, look: dict, folder: Path, greet: bool) -> None:
-        from .pet import ROOT
-        node, script = shutil.which("node"), ROOT / "character" / "export.mjs"
-        if not node or not script.is_file():
-            self.pet.speak("Друг не может прийти: нужен Node.js и Edge или Chrome.", 6000)
+        from . import pet as pet_module
+        tool = pet_module.exporter()
+        if tool is None:
+            self.pet.speak("Друг не может прийти: нужен браузер Edge или Chrome.", 6000)
             return
         tmp = folder.with_name(folder.name + ".tmp")
         shutil.rmtree(tmp, ignore_errors=True)
@@ -344,8 +344,8 @@ class Friends(QObject):
         env.insert("KAI_OUT", str(tmp))
         proc = QProcess(self)
         proc.setProcessEnvironment(env)
-        proc.setProgram(node)
-        proc.setArguments([str(script)])
+        proc.setProgram(tool[0])
+        proc.setArguments(tool[1])
 
         def finished(code, _status=None):
             if self._export is not proc:

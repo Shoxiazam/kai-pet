@@ -278,7 +278,7 @@ def test_custom_accessory_goes_to_export(pet, monkeypatch, tmp_path):
     (folder / "head-bow.svg").write_text(f"<svg viewBox='0 0 256 256'>{big}</svg>", encoding="utf-8")
     monkeypatch.setattr(pet, "looks_root", lambda: tmp_path / "looks")
     started = {}
-    monkeypatch.setattr(pet_module.shutil, "which", lambda name: "node")
+    monkeypatch.setattr(pet_module, "exporter", lambda: ("python", ["-m", "kai_pet.export"]))
 
     def start(self):
         file = self.processEnvironment().value("KAI_CUSTOM_FILE")
@@ -293,7 +293,7 @@ def test_custom_accessory_goes_to_export(pet, monkeypatch, tmp_path):
 
 def test_node_that_fails_to_start_does_not_hang_kai(pet, monkeypatch, tmp_path):
     monkeypatch.setattr(pet, "looks_root", lambda: tmp_path / "looks")
-    monkeypatch.setattr(pet_module.shutil, "which", lambda name: str(tmp_path / "нет-такого-node.exe"))
+    monkeypatch.setattr(pet_module, "exporter", lambda: (str(tmp_path / "нет-такого.exe"), []))
     pet._start_export(pet_module.normalize_look({"acc": ["scarf"]}), announce=False)
     QApplication.processEvents()
     assert pet._export is None                                   # не «переодевается» вечно
@@ -617,7 +617,7 @@ def test_fit_goes_into_export(pet, monkeypatch, tmp_path):
     (folder / "head-santa.svg").write_text(FREEPIK_LIKE, encoding="utf-8")
     monkeypatch.setattr(pet, "looks_root", lambda: tmp_path / "looks")
     pet_module.save_state("custom_fit", {"my_santa": {"rot": 30}})
-    monkeypatch.setattr(pet_module.shutil, "which", lambda name: "node")
+    monkeypatch.setattr(pet_module, "exporter", lambda: ("python", ["-m", "kai_pet.export"]))
     got = {}
     monkeypatch.setattr(pet_module.QProcess, "start", lambda self: got.update(
         custom=Path(self.processEnvironment().value("KAI_CUSTOM_FILE")).read_text(encoding="utf-8")))

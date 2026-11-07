@@ -125,9 +125,16 @@
 в [Open-Meteo](https://open-meteo.com) (без ключа и регистрации). Без города — в сеть ничего не отправляет.
 
 ## Скачать
-Готовый **KaiPet.exe** для Windows — в [Releases](https://github.com/Shoxiazam/kai-pet/releases):
-скачайте и запустите, Python не нужен. Значок Кая появится у часов, там же — «Запускать вместе с Windows».
-Для новых образов из гардероба нужен [Node.js](https://nodejs.org) (Edge в Windows уже есть).
+**Сайт: https://shoxiazam.github.io/kai-pet/** — кнопка «Скачать для Windows».
+
+Или напрямую: [KaiPet-Setup.exe](https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-Setup.exe) —
+установка за пару кликов, без прав администратора; можно сразу включить запуск вместе с Windows.
+Без установки — [KaiPet-portable.zip](https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-portable.zip):
+распакуйте и запустите KaiPet.exe. Python и Node.js не нужны: новые образы и друзья рисуются через Edge,
+который уже есть в Windows.
+
+Windows может показать «Система Windows защитила ваш компьютер» — у Кая нет платной цифровой подписи.
+Нажмите «Подробнее» → «Выполнить в любом случае».
 
 ## Установка из исходников
 Нужен Python 3.10+.
@@ -194,13 +201,16 @@ node character/test.mjs
 node character/export.mjs
 ```
 
-## Сборка KaiPet.exe
+## Сборка KaiPet.exe и установщика
 ```bash
 pip install pyinstaller
-python build_exe.py
+python build_exe.py                     # dist/KaiPet/ — папка, Кай стартует быстро
+iscc installer/KaiPet.iss               # dist/KaiPet-Setup.exe (Inno Setup 6)
+python build_exe.py --onefile           # или один файл dist/KaiPet.exe (стартует дольше)
 ```
-Готовый файл — `dist/KaiPet.exe`. На GitHub это делает сам: `git tag v1.2.0 && git push origin v1.2.0` —
-через несколько минут `.exe` появится в Releases.
+На GitHub это делает сам: `git tag v1.2.0 && git push origin v1.2.0` — через несколько минут
+`KaiPet-Setup.exe` и `KaiPet-portable.zip` появятся в Releases. Сайт из папки `site/` публикуется сам при каждом
+изменении (ветка `gh-pages`); картинки для него — `python tools/make_site_images.py`.
 
 ## Проверки
 ```bash
