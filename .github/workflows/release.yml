@@ -22,6 +22,12 @@ jobs:
       # Тесты гоняет tests.yml на каждый push, в том числе на этот тег; здесь — только сборка.
       - name: Smoke check (exporter imports, frames are there)
         run: python -c "import kai_pet.export, kai_pet.pet as p; assert (p.ASSETS / 'frames' / p.NEWEST_ANIM).is_dir()"
+      - name: Version from tag
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          (Get-Content kai_pet/__init__.py -Raw) -replace '__version__ = "[^"]*"', "__version__ = `"$version`"" |
+            Set-Content kai_pet/__init__.py -NoNewline -Encoding utf8
       - name: Build Kai (folder, fast start)
         run: python build_exe.py
       - name: Installer KaiPet-Setup.exe

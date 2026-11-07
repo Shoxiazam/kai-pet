@@ -7,197 +7,329 @@
 <meta name="description" content="Кай — живой питомец для Windows: эмоции, танцы под музыку, гардероб, друзья, мини-игры и сторож. Бесплатно, установка за пару кликов.">
 <meta property="og:title" content="Кай — питомец на рабочем столе">
 <meta property="og:description" content="Живой котик (или лисёнок, зайка, мишка) у вас на экране. Скачать бесплатно для Windows.">
-<meta property="og:image" content="img/duo-hold.png">
+<meta property="og:image" content="https://shoxiazam.github.io/kai-pet/img/duo-hold.png">
+<meta name="theme-color" content="#FBF6EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1C1816" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="img/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=Onest:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+  /* Направление: «тёплая книжка с картинками». Бумага, коричневые чернила, терракота Кая, мята друзей. */
   :root {
-    --bg: #FBF7F1; --card: #FFFFFF; --ink: #3B3330; --muted: #7A6E68; --line: #EADFD3;
-    --acc: #D97757; --acc-ink: #FFFFFF; --soft: #F5EFE6; --ok: #2F9E61;
+    --n0: #FFFDF9; --n50: #FBF6EE; --n100: #F4ECDF; --n200: #E7DACA; --n400: #A8988B; --n600: #6E625B; --n900: #3B3330;
+    --bg: var(--n50); --paper: var(--n0); --soft: var(--n100); --line: var(--n200); --muted: var(--n600); --ink: var(--n900);
+    --acc: #B5532F; --acc-hover: #9E4627; --acc-ink: #FFFFFF; --acc-soft: #F6DED2;
+    --mint: #2E8C6E; --mint-soft: #DDF1E8;
+    --ring: 0 0 0 3px var(--bg), 0 0 0 6px var(--acc);
+    --ease-out: cubic-bezier(.22, 1, .36, 1); --ease-io: cubic-bezier(.65, 0, .35, 1);
+    --r: 20px;
+    --h: "Nunito", "Segoe UI", system-ui, sans-serif; --t: "Onest", "Segoe UI", system-ui, sans-serif;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #1E1A18; --card: #2A2421; --ink: #F3ECE6; --muted: #B6A99F; --line: #3D3430;
-            --acc: #E58A6A; --acc-ink: #1E1A18; --soft: #332B27; --ok: #57C08A; }
+    :root {
+      --n0: #26201D; --n50: #1C1816; --n100: #2F2825; --n200: #43392F; --n400: #8F8176; --n600: #BDB0A6; --n900: #F2EBE4;
+      --acc: #F08A63; --acc-hover: #F6A07F; --acc-ink: #1C1816; --acc-soft: #4A2C21;
+      --mint: #6FD3AE; --mint-soft: #1F3A31;
+    }
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.55 system-ui, "Segoe UI", Roboto, sans-serif; }
-  a { color: var(--acc); }
-  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
-  header.top { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; }
-  header.top .logo { font-weight: 800; font-size: 20px; text-decoration: none; color: var(--ink); }
-  header.top nav a { margin-left: 18px; color: var(--muted); text-decoration: none; font-size: 15px; }
-  header.top nav a:hover { color: var(--ink); }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 400 clamp(16px, 1.1vw + 12px, 18px)/1.6 var(--t);
+         -webkit-font-smoothing: antialiased; }
+  h1, h2, h3 { font-family: var(--h); line-height: 1.08; letter-spacing: -.015em; margin: 0; }
+  p { margin: 0; }
+  a { color: var(--acc); text-underline-offset: 3px; }
+  a:hover { color: var(--acc-hover); }
+  :focus-visible { outline: none; box-shadow: var(--ring); border-radius: 10px; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 32px); }
+  .measure { max-width: 62ch; }
 
-  .hero { display: grid; grid-template-columns: 1.1fr .9fr; gap: 28px; align-items: center; padding: 28px 0 40px; }
-  h1 { font-size: clamp(34px, 5.4vw, 56px); line-height: 1.05; margin: 0 0 14px; letter-spacing: -.02em; }
-  .lead { font-size: 19px; color: var(--muted); margin: 0 0 26px; max-width: 34em; }
-  .cta { display: inline-flex; align-items: center; gap: 12px; background: var(--acc); color: var(--acc-ink);
-         font-weight: 700; font-size: 19px; padding: 16px 26px; border-radius: 16px; text-decoration: none;
-         box-shadow: 0 8px 24px rgba(217,119,87,.28); transition: transform .12s ease; }
-  .cta:hover { transform: translateY(-2px); }
-  .cta svg { width: 22px; height: 22px; }
-  .meta { margin-top: 12px; font-size: 14px; color: var(--muted); }
-  .alt { margin-top: 10px; font-size: 14px; }
-  .alt a { margin-right: 14px; }
+  /* --- шапка --- */
+  .top { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; }
+  .logo { display: flex; align-items: center; gap: 8px; font: 900 22px var(--h); color: var(--ink); text-decoration: none; }
+  .logo img { width: 32px; height: 32px; }
+  .nav a { margin-left: 24px; color: var(--muted); text-decoration: none; font-weight: 500; font-size: 15px;
+           transition: color .15s var(--ease-out); }
+  .nav a:hover { color: var(--ink); }
 
-  .sprite { --s: 220px; --n: 24; width: var(--s); height: var(--s); background-repeat: no-repeat;
-            background-size: calc(var(--s) * var(--n)) var(--s); animation: play var(--d, 1s) steps(var(--n)) infinite; }
-  @keyframes play { to { background-position-x: calc(var(--s) * var(--n) * -1); } }
-  @media (prefers-reduced-motion: reduce) { .sprite { animation: none; } }
-  .stage { position: relative; display: grid; place-items: center; min-height: 300px;
-           background: radial-gradient(closest-side, var(--soft), transparent); border-radius: 50%; }
-  .stage .bubble { position: absolute; top: 4px; right: 6%; background: var(--card); border: 2px solid var(--ink);
-                   border-radius: 14px; padding: 6px 12px; font-size: 15px; font-weight: 600; }
+  /* --- первый экран --- */
+  .hero { display: grid; grid-template-columns: 1.15fr .85fr; gap: clamp(24px, 4vw, 48px); align-items: center;
+          padding: clamp(16px, 4vw, 48px) 0 clamp(40px, 6vw, 72px); }
+  .badge { display: inline-flex; gap: 8px; align-items: center; background: var(--mint-soft); color: var(--mint);
+           font-weight: 600; font-size: 14px; padding: 6px 12px; border-radius: 999px; margin-bottom: 16px; }
+  h1 { font-size: clamp(36px, 5.6vw, 64px); font-weight: 900; margin-bottom: 16px; }
+  h1 em { font-style: normal; color: var(--acc); }
+  .lead { font-size: clamp(17px, 1.3vw + 12px, 20px); color: var(--muted); margin-bottom: 28px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; }
+  .btn { display: inline-flex; align-items: center; gap: 10px; border: 0; cursor: pointer; text-decoration: none;
+         background: var(--acc); color: var(--acc-ink); font: 800 clamp(17px, 1vw + 12px, 19px) var(--h);
+         padding: 16px 26px; border-radius: 16px; box-shadow: 0 10px 24px -10px rgba(181, 83, 47, .6);
+         transition: transform .18s var(--ease-out), background-color .18s var(--ease-out), box-shadow .18s var(--ease-out); }
+  .btn:hover { color: var(--acc-ink); background: var(--acc-hover); transform: translateY(-2px);
+               box-shadow: 0 14px 28px -12px rgba(181, 83, 47, .7); }
+  .btn:active { transform: scale(.97); transition-duration: .1s; }
+  .btn svg { width: 22px; height: 22px; transition: transform .2s var(--ease-out); }
+  .btn:hover svg { transform: translateY(2px); }
+  .btn[aria-busy="true"] svg { animation: nudge .6s var(--ease-io) 2; }
+  @keyframes nudge { 50% { transform: translateY(4px); } }
+  .ghost { color: var(--ink); font-weight: 600; text-decoration: none; border-bottom: 2px solid var(--line);
+           transition: border-color .15s var(--ease-out); }
+  .ghost:hover { color: var(--ink); border-color: var(--acc); }
+  .meta { margin-top: 14px; font-size: 14px; color: var(--muted); }
+  .status { margin-top: 10px; min-height: 1.5em; font-size: 14px; color: var(--mint); font-weight: 600; }
 
-  section { padding: 44px 0; }
-  h2 { font-size: clamp(26px, 3.6vw, 36px); margin: 0 0 10px; letter-spacing: -.01em; }
-  .sub { color: var(--muted); margin: 0 0 26px; }
+  .stage { position: relative; display: grid; place-items: center; aspect-ratio: 1; max-width: 420px; width: 100%;
+           margin-inline: auto; border-radius: 50%;
+           background: radial-gradient(closest-side, var(--acc-soft), transparent 72%); }
+  .say { position: absolute; top: 10%; right: 4%; background: var(--paper); color: var(--ink); border: 2px solid var(--ink);
+         border-radius: 16px; padding: 6px 14px; font: 800 16px var(--h); }
+  .say::after { content: ""; position: absolute; left: 22px; bottom: -9px; width: 14px; height: 14px; background: var(--paper);
+                border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink); transform: rotate(45deg); }
 
-  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; counter-reset: step; }
-  .step { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 20px; }
-  .step::before { counter-increment: step; content: counter(step); display: grid; place-items: center; width: 34px; height: 34px;
-                  border-radius: 50%; background: var(--acc); color: var(--acc-ink); font-weight: 800; margin-bottom: 10px; }
-  .step b { display: block; margin-bottom: 4px; }
-  .note { margin-top: 16px; background: var(--soft); border-radius: 14px; padding: 14px 16px; font-size: 15px; }
+  /* --- персонажи: ленты кадров, шаги без сглаживания --- */
+  .sprite { --w: 220px; --h: 220px; --fw: var(--w); width: var(--w); height: var(--h); background-repeat: no-repeat;
+            background-size: calc(var(--fw) * var(--n)) var(--h); animation: frames var(--d, 1s) steps(var(--n)) infinite; }
+  @keyframes frames { to { background-position-x: calc(var(--fw) * var(--n) * -1); } }
 
-  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-  .f { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 18px 20px; }
-  .f .ic { font-size: 26px; }
-  .f b { display: block; margin: 6px 0 4px; font-size: 18px; }
-  .f p { margin: 0; color: var(--muted); font-size: 15px; }
+  /* --- секции --- */
+  section { padding: clamp(40px, 6vw, 80px) 0; }
+  .eyebrow { font: 800 14px var(--h); letter-spacing: .08em; text-transform: uppercase; color: var(--acc); margin-bottom: 10px; }
+  h2 { font-size: clamp(28px, 3.6vw, 42px); font-weight: 900; margin-bottom: 12px; }
+  .sub { color: var(--muted); margin-bottom: clamp(24px, 3vw, 36px); }
 
-  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: center; }
-  .duo .sprite { --s: 248px; width: calc(248px * 362 / 248); background-size: calc(362px * var(--n)) 248px; }
-  @keyframes playduo { to { background-position-x: calc(362px * var(--n) * -1); } }
-  .duo .sprite { animation-name: playduo; }
-  .gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-  .gallery img { width: 100%; border-radius: 16px; background: #fff; border: 1px solid var(--line); }
-  .gallery figcaption { font-size: 14px; color: var(--muted); margin-top: 6px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; counter-reset: s; }
+  .step { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); padding: 24px; }
+  .step::before { counter-increment: s; content: counter(s); display: grid; place-items: center; width: 40px; height: 40px;
+                  border-radius: 12px; background: var(--acc-soft); color: var(--acc); font: 900 20px var(--h); margin-bottom: 14px; }
+  .step h3 { font-size: 20px; margin-bottom: 6px; }
+  .step p { color: var(--muted); font-size: 15px; }
+  .note { display: flex; gap: 14px; margin-top: 20px; background: var(--soft); border-radius: var(--r); padding: 18px 20px; font-size: 15px; }
+  .note .i { font-size: 22px; line-height: 1.2; }
 
-  details { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; margin-bottom: 10px; }
-  summary { cursor: pointer; font-weight: 600; }
-  details p { margin: 10px 0 0; color: var(--muted); }
+  /* возможности: разная ширина карточек — не сетка-шаблон */
+  .features { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
+  .f { grid-column: span 2; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); padding: 22px;
+       transition: transform .2s var(--ease-out), border-color .2s var(--ease-out); }
+  .f:hover { transform: translateY(-3px); border-color: var(--acc); }
+  .f.wide { grid-column: span 3; }
+  .f .ic { width: 44px; height: 44px; display: grid; place-items: center; font-size: 24px; border-radius: 12px;
+           background: var(--soft); margin-bottom: 12px; }
+  .f h3 { font-size: 19px; margin-bottom: 6px; }
+  .f p { color: var(--muted); font-size: 15px; }
 
-  .final { text-align: center; padding: 56px 0 70px; }
-  footer { border-top: 1px solid var(--line); padding: 22px 0 40px; color: var(--muted); font-size: 14px; }
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(24px, 4vw, 56px); align-items: center;
+         background: var(--mint-soft); border-radius: 32px; padding: clamp(24px, 4vw, 48px); }
+  .duo .eyebrow { color: var(--mint); }
+  .duo ul { margin: 16px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+  .duo li { display: flex; gap: 10px; }
+  .duo li::before { content: "✓"; color: var(--mint); font-weight: 900; }
+  .duo .sprite { --w: 362px; --h: 248px; }
 
-  @media (max-width: 820px) {
+  .gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  figure { margin: 0; }
+  .gallery img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #FFFDF9;
+                 border: 1px solid var(--line); border-radius: var(--r); }
+  figcaption { font-size: 14px; color: var(--muted); margin-top: 8px; }
+
+  .faq { display: grid; gap: 10px; }
+  details { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; transition: border-color .2s var(--ease-out); }
+  details[open] { border-color: var(--acc); }
+  summary { cursor: pointer; list-style: none; padding: 16px 20px; font-weight: 600; display: flex; justify-content: space-between; gap: 16px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; font: 900 22px/1 var(--h); color: var(--acc); transition: transform .25s var(--ease-out); }
+  details[open] summary::after { transform: rotate(45deg); }
+  details p { padding: 0 20px 18px; color: var(--muted); }
+  details[open] p { animation: open .3s var(--ease-out); }
+  @keyframes open { from { opacity: 0; transform: translateY(-6px); } }
+
+  .final { text-align: center; padding: clamp(48px, 7vw, 96px) 0; }
+  .final .sprite { margin: 0 auto 8px; --w: 180px; --h: 180px; }
+  .final .sub { margin-inline: auto; }
+  footer { border-top: 1px solid var(--line); padding: 24px 0 40px; color: var(--muted); font-size: 14px;
+           display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+
+  /* --- появление: при загрузке и при прокрутке (один раз), только opacity и transform --- */
+  .rise { opacity: 0; transform: translateY(14px); transition: opacity .55s var(--ease-out), transform .55s var(--ease-out);
+          transition-delay: calc(var(--i, 0) * 70ms); }
+  .rise.in { opacity: 1; transform: none; }
+  .no-js .rise { opacity: 1; transform: none; }
+
+  @media (max-width: 860px) {
     .hero, .duo { grid-template-columns: 1fr; }
-    .stage { order: -1; min-height: 240px; }
-    .sprite { --s: 180px; }
-    .steps, .features, .gallery { grid-template-columns: 1fr; }
-    header.top nav { display: none; }
-    .duo .sprite { --s: 200px; width: calc(200px * 362 / 248); background-size: calc(200px * 362 / 248 * var(--n)) 200px; }
-    @keyframes playduo { to { background-position-x: calc(200px * 362 / 248 * var(--n) * -1); } }
+    .stage { max-width: 300px; order: -1; }
+    .sprite { --w: 180px; --h: 180px; }
+    .duo .sprite { --w: 290px; --h: 199px; }
+    .steps, .gallery { grid-template-columns: 1fr; }
+    .features { grid-template-columns: 1fr 1fr; }
+    .f, .f.wide { grid-column: span 1; }
+    .nav a:not(.gh) { display: none; }
+  }
+  @media (max-width: 480px) { .features { grid-template-columns: 1fr; } .duo .sprite { --w: 250px; --h: 171px; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+    .rise { opacity: 1; transform: none; }
   }
 </style>
 </head>
-<body>
+<body class="no-js">
 <div class="wrap">
   <header class="top">
-    <a class="logo" href="#">🐾 Кай</a>
-    <nav><a href="#install">Установка</a><a href="#features">Что умеет</a><a href="#faq">Вопросы</a>
-      <a href="https://github.com/Shoxiazam/kai-pet">GitHub</a></nav>
+    <a class="logo" href="#"><img src="img/favicon.png" alt="" width="32" height="32">Кай</a>
+    <nav class="nav" aria-label="Разделы"><a href="#install">Установка</a><a href="#features">Что умеет</a>
+      <a href="#faq">Вопросы</a><a class="gh" href="https://github.com/Shoxiazam/kai-pet">GitHub</a></nav>
   </header>
 
-  <div class="hero">
-    <div>
-      <h1>Живой питомец у вас на рабочем столе</h1>
-      <p class="lead">Кай радуется, когда вы рядом, танцует под музыку, переодевается, зовёт друзей в гости и сторожит
-        ноутбук, пока вас нет. Бесплатно и без рекламы.</p>
-      <a class="cta" id="download" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-Setup.exe">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 21h16"/></svg>
-        Скачать для Windows
-      </a>
-      <div class="meta" id="meta">Windows 10 и 11 · около 70 МБ · установка за 10 секунд, без прав администратора</div>
-      <div class="alt"><a href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-portable.zip">Без установки (zip)</a>
-        <a href="https://github.com/Shoxiazam/kai-pet">Исходный код</a></div>
-    </div>
-    <div class="stage" aria-hidden="true">
-      <div class="bubble">Привет! 👋</div>
-      <div class="sprite" style="background-image:url(img/kai-wave.png); --n:24; --d:1s"></div>
-    </div>
-  </div>
-
-  <section id="install">
-    <h2>Установка — три шага</h2>
-    <p class="sub">Ничего лишнего ставить не нужно: ни Python, ни Node.js.</p>
-    <div class="steps">
-      <div class="step"><b>Скачайте</b>Нажмите «Скачать для Windows» — загрузится KaiPet-Setup.exe.</div>
-      <div class="step"><b>Запустите</b>Откройте файл и нажмите «Установить». Можно сразу включить запуск вместе с Windows.</div>
-      <div class="step"><b>Готово</b>Кай появится в углу экрана и помашет лапкой. Правый клик по нему — меню.</div>
-    </div>
-    <div class="note"><b>Windows может спросить, доверяете ли вы программе</b> («Система Windows защитила ваш компьютер»).
-      Так бывает со всеми программами без платной цифровой подписи. Нажмите <b>«Подробнее»</b> → <b>«Выполнить в любом случае»</b>.
-      Код Кая открыт — его можно посмотреть на GitHub.</div>
-  </section>
-
-  <section id="features">
-    <h2>Что умеет Кай</h2>
-    <p class="sub">Он не просто сидит — он живёт рядом с вами.</p>
-    <div class="features">
-      <div class="f"><div class="ic">😊</div><b>Эмоции</b><p>Следит глазами за мышкой, мурлычет, когда гладите, радуется, скучает, засыпает в кроватке.</p></div>
-      <div class="f"><div class="ic">🎵</div><b>Танцы под музыку</b><p>Spotify, Яндекс Музыка, YouTube — 11 танцев под настроение песни. Под подкасты не танцует.</p></div>
-      <div class="f"><div class="ic">👕</div><b>Гардероб</b><p>Котик, лисёнок, зайка или мишка, 8 цветов, шапки, очки, худи, костюм акулёнка и ещё 20 вещей.</p></div>
-      <div class="f"><div class="ic">🦊</div><b>Друзья</b><p>Мира, Тоша или Буня приходят в гости: болтают с Каем на 30 тем, играют и танцуют вместе.</p></div>
-      <div class="f"><div class="ic">🎮</div><b>Мини-игры</b><p>Прятки за окнами, догонялки с курсором, камень-ножницы-бумага. Победы растят дружбу.</p></div>
-      <div class="f"><div class="ic">🛡️</div><b>Сторож</b><p>Пока вас нет, кто-то тронул ноутбук? Кай сфотографирует с веб-камеры.</p></div>
-      <div class="f"><div class="ic">⏱️</div><b>Фокус и перерывы</b><p>Режим помодоро, отдых для глаз 20-20-20, напоминание сделать перерыв.</p></div>
-      <div class="f"><div class="ic">🌦️</div><b>Погода и праздники</b><p>Под дождь берёт зонтик, зимой надевает шапку, в ваш день рождения — корону.</p></div>
-      <div class="f"><div class="ic">💬</div><b>Команды словами</b><p>«Станцуй», «надень шарф», «давай в прятки», «дай пять», «позови Миру».</p></div>
-    </div>
-  </section>
-
-  <section>
-    <div class="duo">
+  <main>
+    <div class="hero">
       <div>
-        <h2>Друзья держатся за лапки</h2>
-        <p class="sub">Заиграла музыка — друг подбегает к Каю, они берутся за лапки и танцуют. Скажете одному «посмейся» —
-          засмеются оба. Иногда спорят, но всегда мирятся.</p>
+        <div class="badge rise" style="--i:0">✨ <span id="ver">Новое: друзья, танцы вдвоём, обновление в один клик</span></div>
+        <h1 class="rise" style="--i:1">Живой питомец <em>у&nbsp;вас на&nbsp;экране</em></h1>
+        <p class="lead measure rise" style="--i:2">Кай радуется, когда вы рядом, танцует под музыку, переодевается, зовёт
+          друзей в гости и сторожит ноутбук, пока вас нет. Бесплатно и без рекламы.</p>
+        <div class="actions rise" style="--i:3">
+          <a class="btn" id="download" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-Setup.exe">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 21h16"/></svg>
+            Скачать для Windows
+          </a>
+          <a class="ghost" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-portable.zip">Без установки (zip)</a>
+        </div>
+        <p class="meta rise" style="--i:4" id="meta">Windows 10 и 11 · около 70 МБ · без прав администратора</p>
+        <p class="status" id="status" role="status" aria-live="polite"></p>
       </div>
-      <div class="stage" aria-hidden="true"><div class="sprite" style="background-image:url(img/duo-hold.png); --n:24; --d:2s"></div></div>
+      <div class="stage rise" style="--i:2" aria-hidden="true">
+        <div class="say">Привет! 👋</div>
+        <div class="sprite" style="background-image:url(img/kai-wave.png); --n:24; --d:1s"></div>
+      </div>
     </div>
-  </section>
 
-  <section>
-    <h2>Какой Кай будет у вас?</h2>
-    <p class="sub">Любой вид и цвет — переодеваются прямо из меню, новый образ рисуется за 20 секунд.</p>
-    <div class="gallery">
-      <figure><img loading="lazy" src="img/wardrobe_kinds_colors.png" alt="Четыре вида питомца в восьми цветах"><figcaption>4 вида × 8 цветов</figcaption></figure>
-      <figure><img loading="lazy" src="img/wardrobe_combos.png" alt="Питомцы в разных нарядах"><figcaption>Вещи сочетаются</figcaption></figure>
-      <figure><img loading="lazy" src="img/states_grid.png" alt="Пятнадцать эмоций Кая"><figcaption>15 эмоций</figcaption></figure>
+    <section id="install" aria-labelledby="t-install">
+      <p class="eyebrow">Установка</p>
+      <h2 id="t-install">Три шага — и Кай уже машет вам</h2>
+      <p class="sub measure">Ничего дополнительно ставить не нужно: ни Python, ни Node.js. Обновления Кай потом ставит сам.</p>
+      <div class="steps">
+        <div class="step rise" style="--i:0"><h3>Скачайте</h3><p>Кнопка «Скачать для Windows» — загрузится KaiPet-Setup.exe.</p></div>
+        <div class="step rise" style="--i:1"><h3>Запустите</h3><p>Откройте файл и нажмите «Установить». Можно сразу включить запуск вместе с Windows.</p></div>
+        <div class="step rise" style="--i:2"><h3>Готово</h3><p>Кай появится в углу экрана. Правый клик по нему — меню, игры, друзья и гардероб.</p></div>
+      </div>
+      <div class="note rise" style="--i:3"><span class="i" aria-hidden="true">🛡️</span>
+        <p><b>Windows может спросить, доверяете ли вы программе</b> («Система Windows защитила ваш компьютер») — так бывает
+          со всеми программами без платной цифровой подписи. Нажмите «Подробнее» → «Выполнить в любом случае».
+          Код Кая открыт, его можно посмотреть на <a href="https://github.com/Shoxiazam/kai-pet">GitHub</a>.</p></div>
+    </section>
+
+    <section id="features" aria-labelledby="t-features">
+      <p class="eyebrow">Что умеет</p>
+      <h2 id="t-features">Он не просто сидит — он живёт рядом</h2>
+      <p class="sub measure">Всё, что есть у Кая, работает сразу после установки.</p>
+      <div class="features">
+        <div class="f wide rise" style="--i:0"><div class="ic" aria-hidden="true">😊</div><h3>Эмоции и характер</h3>
+          <p>Следит глазами за мышкой, мурлычет, когда гладите, скучает, если давно не заходили, засыпает в кроватке.</p></div>
+        <div class="f wide rise" style="--i:1"><div class="ic" aria-hidden="true">🎵</div><h3>Танцы под музыку</h3>
+          <p>Spotify, Яндекс Музыка, YouTube — 11 танцев под настроение песни. Под подкасты и звонки не танцует.</p></div>
+        <div class="f rise" style="--i:2"><div class="ic" aria-hidden="true">👕</div><h3>Гардероб</h3>
+          <p>4 вида, 8 цветов, шапки, очки, худи, костюм акулёнка и ещё 20 вещей.</p></div>
+        <div class="f rise" style="--i:3"><div class="ic" aria-hidden="true">🎮</div><h3>Мини-игры</h3>
+          <p>Прятки за окнами, догонялки, камень-ножницы-бумага.</p></div>
+        <div class="f rise" style="--i:4"><div class="ic" aria-hidden="true">🛡️</div><h3>Сторож</h3>
+          <p>Кто-то тронул ноутбук без вас — Кай сфотографирует с веб-камеры.</p></div>
+        <div class="f rise" style="--i:5"><div class="ic" aria-hidden="true">⏱️</div><h3>Фокус и перерывы</h3>
+          <p>Помодоро, отдых для глаз 20-20-20, отчёт за день.</p></div>
+        <div class="f rise" style="--i:6"><div class="ic" aria-hidden="true">🌦️</div><h3>Погода и праздники</h3>
+          <p>Под дождь берёт зонтик, зимой — шапку, в день рождения — корону.</p></div>
+        <div class="f rise" style="--i:7"><div class="ic" aria-hidden="true">💬</div><h3>Команды словами</h3>
+          <p>«Станцуй», «надень шарф», «давай в прятки», «дай пять».</p></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="t-duo">
+      <div class="duo rise">
+        <div>
+          <p class="eyebrow">Друзья</p>
+          <h2 id="t-duo">Мира, Тоша и Буня приходят в гости</h2>
+          <ul>
+            <li>Заиграла музыка — друг подбегает, они берутся за лапки и танцуют вместе</li>
+            <li>Скажете одному «посмейся» или «дай пять» — сделают оба</li>
+            <li>Почти 80 разговоров на 32 темы, паузы между ними как у живых</li>
+            <li>Иногда спорят, но всегда мирятся</li>
+          </ul>
+        </div>
+        <div aria-hidden="true" style="display:grid;place-items:center">
+          <div class="sprite" style="background-image:url(img/duo-hold.png); --n:24; --d:2s"></div>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="t-looks">
+      <p class="eyebrow">Внешность</p>
+      <h2 id="t-looks">Какой Кай будет у вас?</h2>
+      <p class="sub measure">Переодевается прямо из меню, новый образ рисуется за 15 секунд.</p>
+      <div class="gallery">
+        <figure class="rise" style="--i:0"><img loading="lazy" src="img/wardrobe_kinds_colors.png" alt="Четыре вида питомца в восьми цветах"><figcaption>4 вида × 8 цветов</figcaption></figure>
+        <figure class="rise" style="--i:1"><img loading="lazy" src="img/wardrobe_combos.png" alt="Питомцы в разных нарядах"><figcaption>Вещи сочетаются</figcaption></figure>
+        <figure class="rise" style="--i:2"><img loading="lazy" src="img/states_grid.png" alt="Пятнадцать эмоций Кая"><figcaption>15 эмоций</figcaption></figure>
+      </div>
+    </section>
+
+    <section id="faq" aria-labelledby="t-faq">
+      <p class="eyebrow">Вопросы</p>
+      <h2 id="t-faq">Коротко о главном</h2>
+      <div class="faq measure" style="max-width:760px">
+        <details class="rise" style="--i:0"><summary>Это бесплатно? Есть реклама?</summary><p>Бесплатно и без рекламы. Код открыт, лицензия MIT.</p></details>
+        <details class="rise" style="--i:1"><summary>Как обновлять?</summary><p>Никак — Кай раз в день сам проверяет новую версию и предлагает обновиться в один клик. Проверить вручную: значок Кая у часов → «Проверить обновления».</p></details>
+        <details class="rise" style="--i:2"><summary>Нужен ли интернет?</summary><p>Только для погоды и обновлений. Всё остальное работает на вашем компьютере и никуда не отправляется.</p></details>
+        <details class="rise" style="--i:3"><summary>Не будет ли тормозить компьютер?</summary><p>Кай лёгкий: обычно 1–2 % процессора. Спрятать его можно значком у часов.</p></details>
+        <details class="rise" style="--i:4"><summary>Как удалить?</summary><p>Параметры Windows → Приложения → «Кай» → Удалить.</p></details>
+        <details class="rise" style="--i:5"><summary>Есть версия для Mac или Linux?</summary><p>Пока только Windows. На macOS и Linux Кая можно запустить из исходников — инструкция на GitHub.</p></details>
+      </div>
+    </section>
+
+    <div class="final rise">
+      <div class="sprite" style="background-image:url(img/kai-heart.png); --n:24; --d:1s" aria-hidden="true"></div>
+      <h2>Кай ждёт вас</h2>
+      <p class="sub measure">Установка займёт меньше минуты.</p>
+      <a class="btn" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-Setup.exe">Скачать бесплатно</a>
     </div>
-  </section>
+  </main>
 
-  <section id="faq">
-    <h2>Вопросы</h2>
-    <details><summary>Это бесплатно? Есть реклама?</summary><p>Бесплатно и без рекламы. Код открыт, лицензия MIT.</p></details>
-    <details><summary>Нужен ли интернет?</summary><p>Только для погоды. Всё остальное работает на вашем компьютере, ничего никуда не отправляется.</p></details>
-    <details><summary>Не будет ли тормозить компьютер?</summary><p>Кай лёгкий: обычно меньше 1–2 % процессора. Если надо, спрячьте его значком у часов.</p></details>
-    <details><summary>Как включить запуск вместе с Windows?</summary><p>Галочка при установке или значок Кая у часов → «Запускать вместе с Windows».</p></details>
-    <details><summary>Как удалить?</summary><p>Параметры Windows → Приложения → «Кай» → Удалить.</p></details>
-    <details><summary>Есть версия для Mac или Linux?</summary><p>Пока только Windows. С macOS и Linux Кая можно запустить из исходников — инструкция на GitHub.</p></details>
-  </section>
-
-  <div class="final">
-    <div class="sprite" style="background-image:url(img/kai-heart.png); --n:24; --d:1s; margin:0 auto 10px"></div>
-    <h2>Кай ждёт вас</h2>
-    <a class="cta" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-Setup.exe">Скачать бесплатно</a>
-  </div>
-
-  <footer>Кай · открытый код на <a href="https://github.com/Shoxiazam/kai-pet">GitHub</a> ·
-    <a href="https://github.com/Shoxiazam/kai-pet/issues">Сообщить о проблеме</a></footer>
+  <footer><span>Кай — открытый проект</span>
+    <span><a href="https://github.com/Shoxiazam/kai-pet">GitHub</a> · <a href="https://github.com/Shoxiazam/kai-pet/issues">Сообщить о проблеме</a>
+      · <a href="https://github.com/Shoxiazam/kai-pet/releases">Все версии</a></span></footer>
 </div>
 <script>
-// Версия и размер последнего выпуска — если GitHub ответит; без ответа остаётся текст по умолчанию.
-fetch('https://api.github.com/repos/Shoxiazam/kai-pet/releases/latest')
-  .then(r => r.ok ? r.json() : null)
-  .then(rel => {
-    const a = rel && rel.assets && rel.assets.find(x => x.name === 'KaiPet-Setup.exe');
-    if (!a) return;
-    document.getElementById('meta').textContent =
-      `Версия ${rel.tag_name.replace(/^v/, '')} · Windows 10 и 11 · ${Math.round(a.size / 1048576)} МБ · установка за 10 секунд, без прав администратора`;
-  }).catch(() => {});
+  document.body.classList.remove('no-js');
+  // Появление: первый экран — сразу, остальное — когда доедет до экрана (один раз).
+  const items = document.querySelectorAll('.rise');
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver(es => es.forEach(e => {
+      if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+    }), { rootMargin: '0px 0px -8% 0px' });
+    items.forEach(el => io.observe(el));
+  } else items.forEach(el => el.classList.add('in'));
+
+  // Кнопка скачивания: отклик, что загрузка пошла.
+  const status = document.getElementById('status');
+  document.querySelectorAll('a.btn').forEach(b => b.addEventListener('click', () => {
+    b.setAttribute('aria-busy', 'true');
+    status.textContent = 'Скачивание началось — откройте KaiPet-Setup.exe, когда загрузится.';
+    setTimeout(() => b.removeAttribute('aria-busy'), 1500);
+  }));
+
+  // Версия и размер последнего выпуска. Если выпуска с установщиком ещё нет — ведём на страницу всех версий.
+  fetch('https://api.github.com/repos/Shoxiazam/kai-pet/releases/latest')
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(rel => {
+      const a = (rel.assets || []).find(x => x.name === 'KaiPet-Setup.exe');
+      if (!a) throw 'no-setup';
+      const v = rel.tag_name.replace(/^v/, '');
+      document.getElementById('meta').textContent =
+        `Версия ${v} · Windows 10 и 11 · ${Math.round(a.size / 1048576)} МБ · без прав администратора`;
+      document.getElementById('ver').textContent = `Версия ${v}: друзья, танцы вдвоём, обновление в один клик`;
+    })
+    .catch(err => {
+      if (err !== 'no-setup') return;          // GitHub не ответил — оставляем ссылку как есть
+      document.querySelectorAll('a.btn').forEach(b => b.href = 'https://github.com/Shoxiazam/kai-pet/releases');
+    });
 </script>
 </body>
 </html>

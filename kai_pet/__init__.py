@@ -2,4 +2,4 @@
 from .pet import Pet
 
 __all__ = ["Pet"]
-__version__ = "1.1.0"
+__version__ = "1.3.0"   # в выпуске подставляется из тега (release.yml)
