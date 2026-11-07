@@ -128,6 +128,8 @@ DIPS_MAX = 0.12         # у речи между словами тишина —
 _TITLE_TAIL = re.compile(r"\s[-–—]\s(?:youtube|google chrome|mozilla firefox|microsoft\S*\s?edge|яндекс\s?браузер|"
                          r"opera|brave|vivaldi|vlc media player|media player)\b.*$")
 _SONG_TITLE = re.compile(r"^[^:?!|/]{1,40}\s[-–—]\s[^:?!|/]{1,60}$")   # «Исполнитель - Песня»
+_QUOTED_SONG = re.compile(r"^[^:?!|/\"«»]{2,40}\s[\"«“][^\"«»“”]{1,60}[\"»”]")   # Виктор Цой "Группа крови"
+STEADY_DIPS = 0.04      # 10 с почти без провалов громкости — так звучит музыка, а не речь
 
 # Гардероб — те же имена, что в character/kai.js (KINDS, PALETTES, ACCESSORIES).
 KINDS = {"cat": "Котик", "fox": "Лисёнок", "bunny": "Зайка", "bear": "Мишка"}
@@ -379,7 +381,18 @@ def is_music(apps: set[str] | None, title: str, levels) -> bool:
         return False
     if _MUSIC_TITLE.search(t):
         return True
-    return bool(_SONG_TITLE.match(t)) and sustained(levels)
+    if _SONG_TITLE.match(t) or _QUOTED_SONG.match(t):
+        return sustained(levels)
+    return steady(levels)                       # название не подсказывает — решает сам звук, строже
+
+
+def steady(levels, window: int = 100) -> bool:
+    """10 секунд ровного звука почти без пауз: музыка. У речи между словами провалы — она сюда не попадает."""
+    recent = list(levels)[-window:]
+    if len(recent) < window:
+        return False
+    mean = sum(recent) / len(recent)
+    return mean > 0.05 and sum(v < 0.1 * mean for v in recent) / len(recent) <= STEADY_DIPS
 
 
 def window_at(x: int, y: int, skip: set[int]) -> tuple[int, str] | None:

@@ -666,6 +666,8 @@ def test_menu_offers_fit_and_dialog_saves(pet, monkeypatch, tmp_path):
     ({"chrome.exe"}, "Как приготовить плов за 30 минут - YouTube", False),
     ({"vlc.exe"}, "Queen - Bohemian Rhapsody - VLC media player", True),
     ({"chrome.exe"}, "Яндекс Музыка — собираем музыку и подкасты для вас - Google Chrome", True),   # сайт, а не подкаст
+    ({"chrome.exe"}, '(301) Виктор Цой "Группа крови" - YouTube - Google Chrome', True),          # название в кавычках
+    ({"chrome.exe"}, "Кино «Звезда по имени Солнце» - YouTube", True),
     ({"chrome.exe"}, "Believer — Imagine Dragons. Яндекс Музыка - Google Chrome", True),
 ])
 def test_is_music(apps, title, music):
@@ -943,7 +945,8 @@ def test_missed_kai_is_sad_then_happy(monkeypatch, tmp_path, played):
     pet_module.save_state("morning_day", dt.date.today().isoformat())
     for name, value in (("active_window", lambda: ("", "explorer.exe")), ("active_window_rect", lambda: None),
                         ("input_idle_s", lambda: 0.0), ("audio_peak", lambda: 0.0), ("audible_apps", lambda: None),
-                        ("battery", lambda: None), ("cpu_load", lambda: None)):
+                        ("battery", lambda: None), ("cpu_load", lambda: None),
+                        ("background_mood", lambda app, *_: "idle")):     # ночью Кай сонный — тест не про время суток
         monkeypatch.setattr(pet_module, name, value)
     p = pet_module.Pet()
     try:
@@ -1123,3 +1126,13 @@ def test_fit_dialog_changes_place(tmp_path):
     dlg.place.setCurrentIndex(dlg.place.findData("neck"))
     assert dlg.slots["my_a"] == "neck" and seen[-1] == "neck"
     assert dlg.fits["my_a"] == pet_module.DEFAULT_FIT                     # на новом месте — заново вписана
+
+
+def test_unknown_title_dances_only_to_steady_sound():
+    music = [0.3 + 0.05 * (i % 3) for i in range(100)]                       # ровно, без пауз
+    speech = [0.3 if i % 5 else 0.0 for i in range(100)]                       # между словами — тишина
+    title = "Мой отпуск 2026 - YouTube - Google Chrome"
+    assert pet_module.is_music({"chrome.exe"}, title, music)
+    assert not pet_module.is_music({"chrome.exe"}, title, speech)
+    assert not pet_module.is_music({"chrome.exe"}, title, music[:40])          # мало слушали — не торопимся
+    assert not pet_module.is_music({"chrome.exe"}, "Обзор iPhone 18 - YouTube", music)   # обзор — не танцуем
