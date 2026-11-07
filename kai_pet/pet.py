@@ -1256,6 +1256,7 @@ class Pet(QWidget):
             return
         self.play("purr", 2)
         self._sound("purr")
+        self._tell_friend("petted")
         if time.monotonic() - self._last_pet_friend > 60:
             self._last_pet_friend = time.monotonic()
             self._befriend(1)
@@ -1272,6 +1273,7 @@ class Pet(QWidget):
         self.play("eat")
         self._sound("munch")
         self.speak("Ням! Спасибо за печеньку!", 5000)
+        self._tell_friend("fed")
         self._befriend(3)
 
     def _befriend(self, points: int) -> None:
@@ -1357,6 +1359,7 @@ class Pet(QWidget):
         if self.once:           # огорчение или жест не перебиваем кивком
             return
         self.play("checking")
+        self._tell_friend("done")
         mood = meaning_mood(self.heard, answer)
         self.heard = ""
         if mood and self._has(mood):
@@ -1365,6 +1368,13 @@ class Pet(QWidget):
     def failed(self) -> None:
         self._touch()
         self.play("fail")
+        self._tell_friend("failed")
+
+    def _tell_friend(self, event: str) -> None:
+        """Друг рядом отзывается на то, что делает Кай."""
+        friends = getattr(self, "friends", None)
+        if friends is not None:
+            friends.kai_event(event)
 
     def play(self, anim: str, times: int = 1) -> None:
         self.once, self.frame, self.repeat = anim, 0, times - 1
@@ -1372,6 +1382,7 @@ class Pet(QWidget):
     def gesture(self, name: str, times: int = 2) -> None:
         """Жест (анимация) или эмоция на несколько секунд."""
         self._touch()
+        self._tell_friend("gesture:" + name)
         if (self.dir / "frames" / name).is_dir():
             self.play(name, times)
         elif self._has(name):
@@ -1614,6 +1625,7 @@ class Pet(QWidget):
         """Подбежать к курсору (если сидит «где оставлю») и прыгнуть на него."""
         self._touch()
         self._sound("meow")
+        self._tell_friend("hunt")
         step = max(-CHASE_STEP, min(CHASE_STEP, dx))
         area = self._area()
         x = max(area.left(), min(area.right() - self.size_px, self.x() + step))

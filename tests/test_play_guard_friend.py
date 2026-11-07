@@ -123,8 +123,9 @@ def test_guard_by_words(pet, monkeypatch):
 # --- друг ---
 def _fake_friend(monkeypatch, tmp_path):
     folder = tmp_path / "friend-frames"
-    for anim in ("idle", "wave", "jump"):
+    for anim in ("idle", "wave", "jump", "purr", "clap", "eat", "hug", "heart"):
         shutil.copytree(ASSETS / "frames" / anim, folder / "frames" / anim)
+    shutil.copytree(ASSETS / "look", folder / "look")
     monkeypatch.setattr(friend_module, "friend_dir", lambda root, look_id: folder)
     return folder
 
@@ -136,7 +137,7 @@ def test_friend_comes_sits_near_and_leaves(pet, monkeypatch, tmp_path):
     w = pet.friends.widget
     assert w is not None and w.isVisible()
     assert abs(w.geometry().bottom() - pet.geometry().bottom()) <= 1          # сидят на одной линии
-    assert load_state()["buddy"] == {"who": "tosha", "on": True}
+    assert load_state()["buddy"] == {"who": "tosha", "on": True, "pos": None}
     pet.friends.leave(say=False)
     assert not pet.friends.here and load_state()["buddy"]["on"] is False
 
@@ -191,3 +192,63 @@ def test_guard_ignores_own_assistant_and_remote(pet, monkeypatch):
     pet.guard.quiet_until = 0
     pet.guard._check()
     assert trips == [1]
+
+
+def _friend(pet, monkeypatch, tmp_path):
+    _fake_friend(monkeypatch, tmp_path)
+    pet.show()
+    pet.friends.invite("mira", greet=False)
+    w = pet.friends.widget
+    w.once = None
+    return w
+
+
+def test_friend_follows_mouse_with_eyes(pet, monkeypatch, tmp_path):
+    w = _friend(pet, monkeypatch, tmp_path)
+    c = w.geometry().center()
+    monkeypatch.setattr(w, "_cursor", lambda: QPoint(c.x() + 150, c.y()))
+    assert w.current().startswith("look_")              # смотрит на курсор, как Кай
+    monkeypatch.setattr(w, "_cursor", lambda: QPoint(-5000, -5000))
+    assert w.current() == "idle"
+    w.gaze = QPoint(c.x(), c.y() - 400)                  # в прятках смотрит туда, где ушки Кая
+    assert w.current().startswith("look_")
+
+
+def test_friend_petted_and_kai_gets_jealous(pet, monkeypatch, tmp_path):
+    w = _friend(pet, monkeypatch, tmp_path)
+    monkeypatch.setattr(friend_module.random, "random", lambda: 0.0)
+    pet.friends.petted()
+    assert w.once == "purr"
+    pet.friends._jealous()
+    assert pet.bubble.text.text() in friend_module.JEALOUS
+
+
+def test_friend_cookie_once_a_day(pet, monkeypatch, tmp_path):
+    w = _friend(pet, monkeypatch, tmp_path)
+    pet.friends.feed()
+    assert w.once == "eat"
+    w.once = None
+    pet.friends.feed()
+    assert w.once is None                                 # второй раз — «уже наелся»
+
+
+def test_friend_can_be_moved_and_called_back(pet, monkeypatch, tmp_path):
+    w = _friend(pet, monkeypatch, tmp_path)
+    far = pet.pos() + QPoint(-600, -300)
+    pet.friends.dropped(far)
+    assert pet.friends.free == far and load_state()["buddy"]["pos"] == [far.x(), far.y()]
+    pet.friends.sit_with_kai()
+    assert pet.friends.free is None and w.pos() == pet.friends._spot()
+
+
+def test_friend_reacts_to_kai(pet, monkeypatch, tmp_path):
+    w = _friend(pet, monkeypatch, tmp_path)
+    pet.done("Готово")
+    assert w.once == "clap"                               # Кай справился — друг хлопает
+    w.once = None
+    pet.failed()
+    assert w.once == "hug"                                # Каю не повезло — обнимает
+    w.once = None
+    monkeypatch.setattr(friend_module.random, "random", lambda: 0.0)
+    pet.petted()
+    assert w.once == "clap"

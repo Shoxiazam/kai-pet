@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import collections
 import json
 import logging
 import random
@@ -13,8 +14,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QPoint, QProcess, QProcessEnvironment, Qt, QTimer
-from PySide6.QtGui import QPainter, QPixmap
-from PySide6.QtWidgets import QWidget
+from PySide6.QtGui import QCursor, QPainter, QPixmap
+from PySide6.QtWidgets import QMenu, QWidget
 
 from .bubble import Bubble
 
@@ -25,6 +26,11 @@ log = logging.getLogger(__name__)
 
 SCALE = 0.85                    # друг чуть меньше Кая
 SCENE_EVERY_S = (45, 110)       # как часто они что-нибудь затевают
+JEALOUS_EVERY_S, JEALOUS_CHANCE = 60, 0.5     # гладят друга — Кай иногда ревнует
+JEALOUS = ("Эй, а меня погладить?", "А я? Я тоже хороший!", "Хмф. Я тоже тут.")
+COPY_GESTURES = {"heart", "like", "wave", "bye", "dance", "hug", "bow", "clap", "jump"}
+FIDGETS = ("wash", "chasetail", "stretch", "yawn")   # как у Кая: мелочи от скуки
+FIDGET_EVERY_S = (120, 300)
 LINE_MS = 2600                  # пауза между репликами в разговоре
 FRIENDS = {
     "mira": {"name": "Мира", "look": {"kind": "fox", "color": "ginger", "acc": ["bow"]},
@@ -62,27 +68,42 @@ def friend_dir(looks_root: Path, look_id: str) -> Path:
 
 
 class FriendPet(QWidget):
-    """Окошко друга: только кадры и щелчок; поведением управляет Friends."""
+    """Друг на экране — как сам Кай: следит глазами за мышкой, мурлычет, когда гладят, машет на щелчок,
+    подпрыгивает, когда рядом трясут мышкой, его можно перетащить. Решения принимает Friends (ctl)."""
 
-    def __init__(self, folder: Path, size: int, on_click):
+    def __init__(self, folder: Path, size: int, ctl: "Friends"):
         super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setFixedSize(size, size)
-        self.dir, self.size_px, self.on_click = folder, size, on_click
+        self.setMouseTracking(True)                # поглаживание — движение мыши без нажатия
+        self.dir, self.size_px, self.ctl = folder, size, ctl
         self.cache: dict[str, list[QPixmap]] = {}
         self.anim, self.once, self.frame, self.repeat = "idle", None, 0, 0
         self.flash: tuple[str, float] | None = None
+        self.gaze: QPoint | None = None            # куда смотреть вместо курсора (в прятках — туда, где Кай)
+        self.shown = ""
         self._pix: QPixmap | None = None
+        self._press: list | None = None
+        self._stroke = [0.0, 0.0, None]
+        self._trail: collections.deque = collections.deque(maxlen=30)
+        self._last_jump = 0.0
         self.bubble = Bubble()
+
+    # --- кадры ---
+    def _files(self, name: str) -> list[Path]:
+        if name.startswith("look_"):
+            file = self.dir / "look" / f"{name[5:]}.png"
+            return [file] if file.is_file() else []
+        for kind in ("frames", "moods"):
+            files = sorted((self.dir / kind / name).glob("*.png"))
+            if files:
+                return files
+        return []
 
     def _frames(self, name: str) -> list[QPixmap]:
         if name not in self.cache:
-            files: list[Path] = []
-            for kind in ("frames", "moods"):
-                files = sorted((self.dir / kind / name).glob("*.png"))
-                if files:
-                    break
+            files = self._files(name)
             if not files:
                 return self._frames("idle") if name != "idle" else []
             dpr = self.devicePixelRatioF()
@@ -92,13 +113,13 @@ class FriendPet(QWidget):
                 pix = QPixmap(str(f)).scaled(px, px, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 pix.setDevicePixelRatio(dpr)
                 out.append(pix)
-            if len(self.cache) > 8:
+            while len(self.cache) > 12:
                 self.cache.pop(next(iter(self.cache)))
             self.cache[name] = out
         return self.cache[name]
 
     def has(self, name: str) -> bool:
-        return any((self.dir / kind / name).is_dir() for kind in ("frames", "moods"))
+        return bool(self._files(name))
 
     def play(self, name: str, times: int = 1) -> None:
         if (self.dir / "frames" / name).is_dir():
@@ -106,16 +127,29 @@ class FriendPet(QWidget):
         elif self.has(name):
             self.flash = (name, time.monotonic() + 3.0 * times)
 
+    def _cursor(self) -> QPoint:
+        return QCursor.pos()
+
     def current(self) -> str:
         if self.once:
             return self.once
         if self.flash and time.monotonic() < self.flash[1]:
             return self.flash[0]
         self.flash = None
+        if self.anim in ("idle", "curious"):        # спокоен — следит глазами за мышкой, как Кай
+            from .pet import look_at
+            target, center = self.gaze or self._cursor(), self.geometry().center()
+            radius = self.ctl.pet.cfg.look_radius_px * (3 if self.gaze else 1)
+            look = look_at(target.x() - center.x(), target.y() - center.y(), radius, self.size_px / 2)
+            if look and self.has(look):
+                return look
         return self.anim
 
     def tick(self) -> None:
+        self._maybe_jump()
         name = self.current()
+        if name != self.shown:
+            self.shown, self.frame = name, 0
         frames = self._frames(name)
         if not frames:
             return
@@ -125,10 +159,27 @@ class FriendPet(QWidget):
                 self.repeat -= 1
             elif self.once:
                 self.once = None
-                frames = self._frames(self.current())
+                self.shown = name = self.current()
+                frames = self._frames(name)
         self._pix = frames[min(self.frame, len(frames) - 1)]
         self.frame += 1
         self.update()
+
+    def _maybe_jump(self) -> None:
+        """Трясут мышкой рядом — подпрыгивает за курсором, как Кай."""
+        from .pet import CHASE_COOLDOWN_S, CHASE_RADIUS, shaking
+        if self.once or self._press:
+            return
+        now, c = time.monotonic(), self._cursor()
+        self._trail.append((now, c.x()))
+        center = self.geometry().center()
+        if (now - self._last_jump < CHASE_COOLDOWN_S
+                or abs(c.x() - center.x()) + abs(c.y() - center.y()) > CHASE_RADIUS or not shaking(self._trail, now)):
+            return
+        self._last_jump = now
+        self._trail.clear()
+        self.play("jump", 2)
+        self.ctl.kai_event("hunt_friend")
 
     def paintEvent(self, _event):
         if self._pix is not None:
@@ -142,9 +193,41 @@ class FriendPet(QWidget):
         self.bubble.hide()
         super().hideEvent(event)
 
-    def mouseReleaseEvent(self, e):
+    # --- мышь: щелчок — помахать, перетащить — пересадить, погладить — мурлыкать, правый — меню ---
+    def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
-            self.on_click()
+            self._press = [e.globalPosition().toPoint(), self.pos(), False]
+
+    def mouseMoveEvent(self, e):
+        from .pet import PET_DISTANCE, PET_GAP_S
+        if self._press:
+            start, origin, _ = self._press
+            delta = e.globalPosition().toPoint() - start
+            if abs(delta.x()) + abs(delta.y()) > 4:
+                self._press[2] = True
+            if self._press[2]:
+                self.move(origin + delta)
+            return
+        now, pos = time.monotonic(), e.globalPosition()
+        length, last_t, last_pos = self._stroke
+        length = 0.0 if last_pos is None or now - last_t > PET_GAP_S else \
+            length + abs(pos.x() - last_pos.x()) + abs(pos.y() - last_pos.y())
+        self._stroke = [length, now, pos]
+        if length > PET_DISTANCE:
+            self._stroke = [0.0, now, pos]
+            self.ctl.petted()
+
+    def mouseReleaseEvent(self, e):
+        if self._press and e.button() == Qt.LeftButton:
+            moved = self._press[2]
+            self._press = None
+            if moved:
+                self.ctl.dropped(self.pos())
+            else:
+                self.ctl.clicked()
+
+    def contextMenuEvent(self, e):
+        self.ctl.menu(e.globalPos())
 
     def close_all(self) -> None:
         self.bubble.hide()
@@ -164,16 +247,25 @@ class Friends(QObject):
         self._export: QProcess | None = None
         self._scene: list = []
         self._next_scene = 0.0
+        self._fidget_at = time.monotonic() + random.uniform(*FIDGET_EVERY_S)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._follow = QTimer(self)
         self._follow.timeout.connect(self._stay_near)
+        self.free: QPoint | None = None            # куда друга пересадили мышкой; None — рядом с Каем
+        self._jealous_at = 0.0
         from .pet import load_state
         saved = load_state().get("buddy")
         if isinstance(saved, dict) and saved.get("who") in FRIENDS:
             self.who = saved["who"]
+            pos = saved.get("pos")
+            if isinstance(pos, list) and len(pos) == 2 and all(isinstance(v, int) for v in pos):
+                self.free = QPoint(*pos)
             if saved.get("on"):
                 QTimer.singleShot(4000, lambda: self.invite(self.who, greet=False))
+        guard = getattr(pet, "guard", None)
+        if guard is not None:
+            guard.alarm.connect(lambda _photo: self.kai_event("alarm"))
 
     @property
     def name(self) -> str:
@@ -185,7 +277,8 @@ class Friends(QObject):
 
     def _save(self, on: bool) -> None:
         from .pet import save_state
-        save_state("buddy", {"who": self.who, "on": on})
+        pos = [self.free.x(), self.free.y()] if self.free is not None else None
+        save_state("buddy", {"who": self.who, "on": on, "pos": pos})
 
     # --- позвать / отпустить ---
     def invite(self, who: str = "", greet: bool = True) -> None:
@@ -268,7 +361,7 @@ class Friends(QObject):
 
     def _arrive(self, folder: Path, greet: bool) -> None:
         size = round(self.pet.size_px * SCALE)
-        self.widget = FriendPet(folder, size, self._clicked)
+        self.widget = FriendPet(folder, size, self)
         self._place()
         self.widget.show()
         self.widget.play("wave", 2)
@@ -283,6 +376,9 @@ class Friends(QObject):
     def _spot(self) -> QPoint:
         pet, w = self.pet, self.widget
         area = pet._area()
+        if self.free is not None:                  # пересадили мышкой — сидит там, пока не позовут к Каю
+            return QPoint(min(max(self.free.x(), area.left()), area.right() - w.width()),
+                          min(max(self.free.y(), area.top()), area.bottom() - w.height()))
         g = pet.geometry()
         y = g.bottom() - w.height() + 1
         left = g.left() - w.width() + 18
@@ -304,22 +400,124 @@ class Friends(QObject):
             return
         if not w.isVisible():
             w.show()
+        if w._press:                                # друга сейчас тащат мышкой
+            return
         target = self._spot()
         if (target - w.pos()).manhattanLength() > 3:
             w.move(target)
 
-    def _clicked(self) -> None:
+    # --- как с Каем: щелчок, поглаживание, печенька, пересадить, меню ---
+    def clicked(self) -> None:
         if self.widget is None:
             return
         self.widget.play(random.choice(["wave", "jump", "heart"]))
         self.widget.bubble.say(random.choice(CLICK), 4000)
+        self.pet._sound("meow")
+
+    def petted(self) -> None:
+        """Гладят друга: мурлычет. Кай иногда ревнует."""
+        w = self.widget
+        if w is None or w.once == "purr":
+            return
+        w.play("purr", 2)
+        self.pet._sound("purr")
+        now = time.monotonic()
+        if now - self._jealous_at > JEALOUS_EVERY_S and random.random() < JEALOUS_CHANCE and not self.pet.once:
+            self._jealous_at = now
+            QTimer.singleShot(1500, self._jealous)
+
+    def _jealous(self) -> None:
+        self.pet.gesture("grumpy", 1)
+        self.pet.speak(random.choice(JEALOUS), 5000)
+
+    def feed(self) -> None:
+        """Печенька другу — раз в день, как Каю."""
+        from .pet import load_state, save_state
+        if self.widget is None:
+            return
+        today = time.strftime("%Y-%m-%d")
+        fed = load_state().get("buddy_fed")
+        fed = fed if isinstance(fed, dict) else {}
+        if fed.get(self.who) == today:
+            self.widget.bubble.say("Спасибо, я уже наелся! Давай завтра.", 4000)
+            return
+        fed[self.who] = today
+        save_state("buddy_fed", fed)
+        self.widget.play("eat")
+        self.pet._sound("munch")
+        self.widget.bubble.say("Ням! Спасибо!", 4000)
+        QTimer.singleShot(2200, lambda: self.pet.speak(f"{self.name}, оставь и мне кусочек!", 4000))
+
+    def dropped(self, pos: QPoint) -> None:
+        """Друга отпустили: рядом с Каем — снова сидит с ним, в другом месте — остаётся там."""
+        w = self.widget
+        near = (pos + QPoint(w.width() // 2, w.height() // 2)
+                - self.pet.geometry().center()).manhattanLength() < self.pet.size_px * 1.3
+        self.free = None if near else QPoint(pos)
+        self._save(True)
+        w.play("wave")
+
+    def sit_with_kai(self) -> None:
+        self.free = None
+        self._save(True)
+        self._place()
+
+    def menu(self, pos: QPoint) -> None:
+        if self.widget is None:
+            return
+        menu = QMenu()
+        menu.addAction("Погладить").triggered.connect(lambda _c=False: self.petted())
+        menu.addAction("Угостить печенькой").triggered.connect(lambda _c=False: self.feed())
+        menu.addAction("Поболтать с Каем").triggered.connect(lambda _c=False: self.scene("talk"))
+        menu.addAction("Поиграть с Каем").triggered.connect(lambda _c=False: self.scene("play"))
+        if self.free is not None:
+            menu.addAction("Сесть рядом с Каем").triggered.connect(lambda _c=False: self.sit_with_kai())
+        menu.addSeparator()
+        menu.addAction(f"{self.name} — {FRIENDS[self.who]['about']}").setEnabled(False)
+        menu.addAction("Отпустить домой").triggered.connect(lambda _c=False: self.leave())
+        self._show_menu(menu, pos)
+
+    def _show_menu(self, menu: QMenu, pos: QPoint) -> None:
+        menu.exec(pos)
+
+    # --- вместе с Каем: друг отзывается на всё, что делает Кай ---
+    def kai_event(self, event: str) -> None:
+        w = self.widget
+        if w is None or self._scene or not w.isVisible():
+            return
+        if event == "petted":
+            if random.random() < 0.3:
+                w.play("clap")
+        elif event == "fed":
+            w.flash = ("curious", time.monotonic() + 3)
+            w.bubble.say(random.choice(("А мне печеньку?", "Вкусно пахнет!", "Поделишься?")), 4000)
+        elif event == "done":
+            w.play("clap")
+        elif event == "failed":
+            w.play("hug")
+            w.bubble.say(random.choice(("Не грусти, Кай!", "Ничего, в следующий раз получится!")), 4000)
+        elif event == "hunt":
+            QTimer.singleShot(250, lambda: self.widget and self.widget.play("jump", 2))
+        elif event == "hunt_friend":
+            if not self.pet.once and self.pet.loop == "idle":
+                QTimer.singleShot(250, lambda: self.pet.play("jump"))
+        elif event == "found":
+            w.play("clap", 2)
+            w.bubble.say("Ура, нашёлся!", 3000)
+        elif event == "alarm":
+            w.flash = ("surprised", time.monotonic() + 6)
+            w.bubble.say("Чужой! Кай, зови хозяина!", 6000)
+        elif event.startswith("gesture:"):               # повторяет жест за Каем
+            name = event[8:]
+            if name in COPY_GESTURES:
+                QTimer.singleShot(500, lambda: self.widget and self.widget.play(name, 2))
 
     # --- поведение ---
     def _mirror(self) -> None:
         """Фон друга повторяет настроение Кая: спит, когда Кай спит, танцует, когда Кай танцует."""
         w, shown = self.widget, self.pet.shown
         if shown in ("bed", "sleepy"):
-            w.anim = "sleepy" if w.has("sleepy") else "idle"
+            w.anim = shown if w.has(shown) else "idle"          # Кай в кроватке — и друг спит
         elif self.pet.music and w.has(shown):
             w.anim = shown
         elif shown in ("working", "waiting"):
@@ -331,6 +529,9 @@ class Friends(QObject):
         w = self.widget
         if w is None:
             return
+        games = getattr(self.pet, "games", None)
+        ears = games.ears if games is not None and games.active == "seek" else None
+        w.gaze = ears.geometry().center() if ears is not None else None    # в прятках выдаёт Кая взглядом
         self._mirror()
         w.tick()
         now = time.monotonic()
@@ -341,6 +542,9 @@ class Friends(QObject):
         if now >= self._next_scene and not busy:
             self._next_scene = now + random.uniform(*SCENE_EVERY_S)
             self.scene()
+        elif now >= self._fidget_at and not w.once and w.anim == "idle":
+            self._fidget_at = now + random.uniform(*FIDGET_EVERY_S)
+            w.play(random.choice(FIDGETS))           # от скуки: умывается, гоняется за хвостом, зевает
 
     def scene(self, kind: str = "") -> None:
         """Сценка: разговор, игра или ссора с примирением."""

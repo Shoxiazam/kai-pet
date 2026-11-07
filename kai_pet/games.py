@@ -253,6 +253,7 @@ class Games(QObject):
         pet._sound("meow")
         you, kai = self.score("seek", True)
         pet.speak(f"Нашёл! За {took} с. Счёт {you}:{kai}.", 7000)
+        pet._tell_friend("found")
         self.reward(2)
         self._go_home()
 
