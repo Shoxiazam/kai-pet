@@ -3,9 +3,11 @@ import shutil
 import time
 
 from PySide6.QtCore import QPoint
+from PySide6.QtTest import QTest
 
 from kai_pet import friend as friend_module
 from kai_pet import guard as guard_module
+from kai_pet import talks
 from kai_pet.games import GAME_POINTS_DAY, game_for, rps_result
 from kai_pet.pet import ASSETS, load_state
 from test_features import pet, played  # noqa: F401  (фикстуры)
@@ -123,7 +125,7 @@ def test_guard_by_words(pet, monkeypatch):
 # --- друг ---
 def _fake_friend(monkeypatch, tmp_path):
     folder = tmp_path / "friend-frames"
-    for anim in ("idle", "wave", "jump", "purr", "clap", "eat", "hug", "heart"):
+    for anim in ("idle", "wave", "jump", "purr", "clap", "eat", "hug", "heart", "holdL", "holdR", "highL", "highR", "laugh"):
         shutil.copytree(ASSETS / "frames" / anim, folder / "frames" / anim)
     shutil.copytree(ASSETS / "look", folder / "look")
     monkeypatch.setattr(friend_module, "friend_dir", lambda root, look_id: folder)
@@ -174,7 +176,9 @@ def test_friend_hides_with_kai(pet, monkeypatch, tmp_path):
     assert pet.friends.widget.isVisible()
     pet.move(QPoint(500, 500))
     pet.friends._stay_near()
-    assert pet.friends.widget.pos() == pet.friends._spot()
+    assert pet.friends._walk is not None                 # Кая переставили — друг бежит к нему
+    QTest.qWait(1500)
+    assert pet.friends._walk is None and pet.friends.widget.pos() == pet.friends._spot()
 
 
 def test_guard_ignores_own_assistant_and_remote(pet, monkeypatch):
@@ -252,3 +256,87 @@ def test_friend_reacts_to_kai(pet, monkeypatch, tmp_path):
     monkeypatch.setattr(friend_module.random, "random", lambda: 0.0)
     pet.petted()
     assert w.once == "clap"
+
+
+def test_dance_together_holds_paws_then_changes_moves(pet, monkeypatch, tmp_path):
+    w = _friend(pet, monkeypatch, tmp_path)
+    pet.music, pet.dance_on, pet.dance_style = True, True, "groove"
+    pet.friends._dance_together(time.monotonic())
+    assert pet.friends.duet == "hold" and pet.friends.mode == "hold"     # сначала берутся за лапки
+    assert pet.partner_anim == "hold" + pet.friends.toward_friend()
+    assert w.anim == "hold" + pet.friends.toward_kai()
+    assert pet.current() == pet.partner_anim                            # Кай танцует с другом, а не смотрит на мышку
+    pet.friends._duet_until = 0
+    pet.friends._dance_together(time.monotonic())
+    assert pet.friends.duet != "hold" or pet.friends.mode == "hold"
+    pet.music = False                                                    # музыка кончилась — отпускают лапки
+    pet.friends._dance_together(time.monotonic())
+    assert pet.friends.duet is None and pet.partner_anim is None and pet.friends.mode == "near"
+
+
+def test_hold_spot_puts_paws_together(pet, monkeypatch, tmp_path):
+    w = _friend(pet, monkeypatch, tmp_path)
+    pet.friends.mode = "hold"
+    spot, g, k = pet.friends._spot(), pet.geometry(), pet.size_px
+    if pet.friends.side == "left":
+        assert spot.x() == g.left() - round(friend_module.HOLD_DX * k)
+    assert spot.y() == g.top() + round(friend_module.HOLD_DY * k)
+
+
+def test_hold_scene_and_release(pet, monkeypatch, tmp_path):
+    _friend(pet, monkeypatch, tmp_path)
+    pet.friends.scene("hold")
+    assert pet.friends.mode == "hold" and pet.partner_anim
+    while pet.friends._scene:
+        pet.friends._say_next()
+    pet.friends._say_next()                                              # разговор кончился — отпускают
+    assert pet.friends.mode == "near" and pet.partner_anim is None
+
+
+def test_every_talk_uses_existing_moves():
+    known = {d.name for d in (ASSETS / "frames").iterdir()} | {d.name for d in (ASSETS / "moods").iterdir()}
+    known |= {"high", "hold"}
+    for topic, dialogs in talks.TOPICS.items():
+        assert len(dialogs) >= 1
+        for dialog in dialogs:
+            for who, text, anim in dialog:
+                assert who in ("k", "f") and text and anim in known, (topic, text, anim)
+    for lines in talks.SOLO.values():
+        assert all(anim in known for _t, anim in lines)
+    for k_anim, f_anim, _line in talks.PLAYS:
+        assert k_anim in known and f_anim in known
+    assert sum(len(d) for d in talks.TOPICS.values()) >= 75                  # разговоров много
+
+
+def test_talk_topics_follow_situation():
+    assert "music" in talks.context(14, 2, True, None, False, "", 0, 0)
+    assert "code" in talks.context(14, 2, False, None, False, "Visual Studio Code", 0, 0)
+    assert "night" in talks.context(2, 2, False, None, False, "", 0, 0)
+    assert "rain" in talks.context(14, 2, False, 10, True, "", 0, 0)
+    assert "cold" in talks.context(14, 2, False, -5, False, "", 0, 0)
+    assert "winter" in talks.context(14, 2, False, None, False, "", 0, 0, month=12)
+    topic, _ = talks.pick(["jokes", "food"], ["jokes"])
+    assert topic == "food"                                                 # недавнюю тему не повторяют
+
+
+def test_pauses_are_random_and_alive():
+    import random
+    rng = random.Random(1)
+    pauses = [talks.next_pause(14, 60, rng) for _ in range(400)]
+    assert min(pauses) < 30 and max(pauses) > 400                          # то болтают подряд, то надолго молчат
+    assert len({round(p) for p in pauses}) > 150
+    night = sum(talks.next_pause(2, 60, random.Random(i)) for i in range(200))
+    day = sum(talks.next_pause(14, 60, random.Random(i)) for i in range(200))
+    assert night > day
+
+
+def test_kai_command_makes_both_do_it(pet, monkeypatch, tmp_path):
+    w = _friend(pet, monkeypatch, tmp_path)
+    assert pet.command("посмейся")
+    QTest.qWait(600)
+    assert w.once == "laugh" or w.flash                                   # сказали одному — делают оба
+    w.once = None
+    assert pet.command("дай пять")
+    QTest.qWait(300)
+    assert pet.once == "high" + pet.friends.toward_friend()
+    assert w.once == "high" + pet.friends.toward_kai()

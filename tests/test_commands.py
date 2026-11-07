@@ -84,3 +84,14 @@ def test_wardrobe_commands(text, look):
 @pytest.mark.parametrize("text", ["сними скриншот", "стань на паузу", "будь внимательнее"])
 def test_wardrobe_does_not_take_other_tasks(text):
     assert parse(text) is None
+
+
+def test_new_gestures_do_not_steal_tasks():
+    from kai_pet import commands
+    assert commands.parse("подумай").anim == "think"
+    assert commands.parse("посмейся").anim == "laugh"
+    assert commands.parse("покружись").anim == "spin"
+    assert commands.parse("дай пять").anim == "high"
+    assert commands.parse("подумай, как ответить на письмо") is None      # это работа ассистента
+    assert commands.parse("долго думай над задачей") is None
+    assert commands.parse("рассмеши меня анекдотом") is None

@@ -119,6 +119,10 @@ class Games(QObject):
         self._fled = 0.0
         self._run: QPropertyAnimation | None = None
 
+    def _later(self, ms: int, fn) -> None:
+        """Отложить, но с привязкой к себе: Кая закрыли — таймер умирает вместе с ним."""
+        QTimer.singleShot(ms, self, fn)
+
     # --- общее ---
     def start(self, game: str) -> None:
         if self.active or not self.pet.isVisible():
@@ -137,7 +141,7 @@ class Games(QObject):
         if self.active:
             self.pet.speak("Мы уже играем!", 4000)
         else:
-            QTimer.singleShot(300, lambda: self.start(game))    # сначала закроется окно, где писали
+            self._later(300, lambda: self.start(game))    # сначала закроется окно, где писали
         return True
 
     def stop(self) -> None:
@@ -175,7 +179,7 @@ class Games(QObject):
 
     def _go_home(self, delay_ms: int = 3500) -> None:
         home = QPoint(self.home)
-        QTimer.singleShot(delay_ms, lambda: self.active is None and self.pet.move(home))
+        self._later(delay_ms, lambda: self.active is None and self.pet.move(home))
 
     # --- камень-ножницы-бумага ---
     def rps(self) -> None:
@@ -228,7 +232,7 @@ class Games(QObject):
         self.active, self.home, self.started, self._hinted = "seek", pet.pos(), time.monotonic(), time.monotonic()
         pet.speak("Закрой глаза… Я прячусь! Ищи мои ушки за окнами.", 5000)
         pet._sound("meow")
-        QTimer.singleShot(1200, self._hide_now)
+        self._later(1200, self._hide_now)
 
     def _hide_now(self) -> None:
         if self.active != "seek" or self.ears is None:

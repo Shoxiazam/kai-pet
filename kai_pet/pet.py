@@ -81,7 +81,7 @@ _MOOD_WORDS = [
 _MOOD_RX = [(m, re.compile(rx)) for m, rx in _MOOD_WORDS]
 SIGN_RECT = (44, 194, 168, 42)   # где писать на табличке: x, y, ширина, высота в кадре 256 (character/kai.js, SIGN)
 SIGN_MAX = 60
-NEWEST_ANIM = "sign"    # в образе нет этих кадров — нарисован старой версией, перерисовать
+NEWEST_ANIM = "highR"   # в образе нет этих кадров — нарисован старой версией, перерисовать
 WEATHER_EVERY_MS = 30 * 60 * 1000
 RAIN = set(range(51, 68)) | {80, 81, 82, 95, 96, 99}     # коды погоды WMO (Open-Meteo)
 SNOW = set(range(71, 78)) | {85, 86}
@@ -103,6 +103,9 @@ MEDIA_APPS = {"chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "browser.e
 _MUSIC_TITLE = re.compile(r"music|музык|spotify|soundcloud|песн|\bsong|lyrics|official (?:music )?video|клип|remix|"
                           r"\bfeat\.|\bft\.|playlist|плейлист|radio|радио|album|альбом|\bmix\b|микс|cover|кавер|"
                           r"lo-?fi|\bbeats?\b|\bost\b|саундтрек|soundtrack|концерт|concert|\bdj\b")
+# Музыкальные сервисы в браузере: их вкладка — всегда музыка, даже если в заголовке «…и подкасты для вас».
+_MUSIC_SITE = re.compile(r"яндекс[\s.]*музык|yandex[\s.]*music|music\.yandex|youtube music|spotify|soundcloud|"
+                         r"deezer|apple music|vk музык|zvuk\.com|tidal|bandcamp|last\.fm")
 _TALK_TITLE = re.compile(r"podcast|подкаст|interview|интервью|lecture|лекци|урок|tutorial|обзор|review|\bnews\b|"
                          r"новост|стрим|\bstream|vlog|влог|разбор|курс|вебинар|webinar|звонок|meeting|встреча")
 # Забота: фокус, глаза, батарея, нагрузка, отчёт за день.
@@ -165,7 +168,8 @@ EXPORT_TIMEOUT_MS = 180_000
 DRESSED = ("Как я тебе?", "Ну как, идёт?", "Новый образ готов!")
 
 GESTURES = {"heart": "Сердечко", "like": "Лайк", "wave": "Помахать", "bye": "Попрощаться", "dance": "Станцевать",
-            "hug": "Обнять", "bow": "Поклониться", "clap": "Похлопать", "jump": "Подпрыгнуть"}
+            "hug": "Обнять", "bow": "Поклониться", "clap": "Похлопать", "jump": "Подпрыгнуть",
+            "laugh": "Посмеяться", "spin": "Покружиться", "shy": "Смутиться", "think": "Задуматься", "highR": "Дай пять"}
 
 # Эмоция по смыслу: ваша фраза и ответ ассистента. Без нейросети.
 _CARE = ("устал", "грустн", "плохо", "надоел", "болит", "тяжело", "стресс", "не могу", "tired", "sad")
@@ -360,6 +364,8 @@ def is_music(apps: set[str] | None, title: str, levels) -> bool:
         if not apps & MEDIA_APPS:
             return False
     t = media_title(title)
+    if _MUSIC_SITE.search(t):
+        return True
     if _TALK_TITLE.search(t):
         return False
     if _MUSIC_TITLE.search(t):
@@ -1018,6 +1024,7 @@ class Pet(QWidget):
         self.heard = ""
         self.flash: tuple[str, float] | None = None          # эмоция ненадолго: (имя, до какого момента)
         self.bubble = Bubble()
+        self.partner_anim: str | None = None                  # что Кай делает вместе с другом (friend.Friends)
         self.shown = ""
         self.music = False
         self._peaks: collections.deque = collections.deque(maxlen=MUSIC_SAMPLES)
@@ -1382,6 +1389,9 @@ class Pet(QWidget):
     def gesture(self, name: str, times: int = 2) -> None:
         """Жест (анимация) или эмоция на несколько секунд."""
         self._touch()
+        if name in ("high", "highL", "highR"):   # «дай пять» — той лапкой, где сидит друг
+            friends = getattr(self, "friends", None)
+            name = "high" + (friends.toward_friend() if friends is not None and friends.here else "R")
         self._tell_friend("gesture:" + name)
         if (self.dir / "frames" / name).is_dir():
             self.play(name, times)
@@ -1537,6 +1547,8 @@ class Pet(QWidget):
             return "calm"                      # глаза закрыты — отдыхаем вместе
         if (self.sign_text or self.focus_until) and self._has("sign"):
             return "sign"                      # держит табличку, пока её не уберут
+        if self.partner_anim and self._has(self.partner_anim):
+            return self.partner_anim           # танцует с другом или держит его за лапку
         c, g = self._cursor(), self.geometry()
         look = look_at(c.x() - g.center().x(), c.y() - g.center().y(), self.cfg.look_radius_px, self.size_px / 2)
         if look:

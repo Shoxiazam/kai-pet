@@ -174,6 +174,19 @@ function run(facing) {
   };
 }
 
+// Держит друга за лапку: side −1 — друг слева (тянется левой лапкой), 1 — справа. Покачиваются вместе.
+// Лапка почти горизонтально (88°): у двух питомцев разного роста кончики встречаются, если меньшего чуть приподнять.
+function hold(side) {
+  return (p, t) => {
+    const s = Math.sin(TAU * t), reach = 88 + 3 * s, other = 20 + 10 * s;
+    Object.assign(p, { eyeL: 'happy', eyeR: 'happy', mouth: 'smile', blush: 0.8, tail: 16 + 8 * s, curl: 0.85,
+      look: [0.5 * side, 0], armL: side < 0 ? reach : other, armR: side < 0 ? other : reach });
+    p.rot += 3 * s; p.tilt += 5 * s; p.y -= 2 * Math.abs(s);
+    p.earL += 4 * s; p.earR -= 4 * s;
+    return p;
+  };
+}
+
 // ── Анимации: имя → кадры, fps, состояние по умолчанию, функция (поза, t∈[0,1)) → поза.
 const ANIMS = {
   idle: { ru: 'Спокойное ожидание', frames: 48, fps: 24, state: 'neutral', fn: (p, t) => {
@@ -362,6 +375,50 @@ const ANIMS = {
     Object.assign(p, { mouth: 'flat', eyeScale: 1.05, earL: -10, earR: -10, tail: 0, curl: 0 }, P);
     return p;
   } },
+  holdL: { ru: 'Держит за лапку друга слева', frames: 48, fps: 24, state: 'neutral', fn: hold(-1) },
+  holdR: { ru: 'Держит за лапку друга справа', frames: 48, fps: 24, state: 'neutral', fn: hold(1) },
+  laugh: { ru: 'Смеётся', frames: 16, fps: 24, state: 'neutral', fn: (p, t) => {
+    const s = Math.sin(2 * TAU * t), n = Math.abs(Math.sin(TAU * t));
+    Object.assign(p, { eyeL: 'squeeze', eyeR: 'squeeze', mouth: 'grin', mouthOpen: 0.7 + 0.3 * n, blush: 0.9,
+      arms: -55 + 8 * s, tail: 20 + 10 * s });
+    p.y -= 3 * n; p.sy *= 1 - 0.03 * n; p.tilt += 8 + 3 * s; p.earL -= 6; p.earR -= 6;
+    return p;
+  } },
+  think: { ru: 'Задумался', frames: 48, fps: 20, state: 'neutral', fn: (p, t) => {
+    const s = Math.sin(TAU * t);
+    Object.assign(p, { look: [0.45, -0.6], browL: -6, browR: 8, mouth: 'flat', armR: -128 + 4 * s, armL: 4,
+      tail: 6 + 6 * s, curl: 0.7, earL: -4, earR: 10 });
+    p.tilt -= 8; blink(p, t, 0.55, 0.62);
+    return p;
+  } },
+  shy: { ru: 'Стесняется', frames: 32, fps: 20, state: 'neutral', fn: (p, t) => {
+    const s = Math.sin(TAU * t);
+    Object.assign(p, { eyeL: 'happy', eyeR: 'happy', mouth: 'smile', blush: 1, arms: -58 + 4 * s, look: [0, 0.5],
+      ears: 20, tail: 4 + 6 * s, curl: 0.95 });
+    p.tilt += 12 + 3 * s; p.sx *= 1.03; p.sy *= 0.97; p.y += 2;
+    return p;
+  } },
+  spin: { ru: 'Кружится', frames: 24, fps: 24, state: 'neutral', fn: (p, t) => {
+    const c = Math.cos(TAU * t);
+    Object.assign(p, { eyeL: 'happy', eyeR: 'happy', mouth: 'grin', mouthOpen: 0.7, arms: 120, tail: 24, spark: 1,
+      facing: c >= 0 ? 1 : -1 });
+    p.sx *= Math.max(0.12, Math.abs(c)); p.y -= 10 * Math.abs(Math.sin(TAU * t));
+    return p;
+  } },
+  highL: { ru: 'Дай пять (влево)', frames: 30, fps: 24, state: 'neutral', fn: keyed([
+    [0, {}],
+    [0.3, { armL: 150, eyes: 'happy', mouth: 'grin', mouthOpen: 0.6, tilt: -6, look: [-0.6, -0.3] }],
+    [0.45, { armL: 118, eyes: 'squeeze', mouth: 'grin', mouthOpen: 1, tilt: -10, y: -4, sparkle: 1, look: [-0.6, -0.2] }],
+    [0.7, { armL: 130, eyes: 'happy', mouth: 'grin', mouthOpen: 0.7, tilt: -4, tail: 25 }],
+    [1, {}],
+  ]) },
+  highR: { ru: 'Дай пять (вправо)', frames: 30, fps: 24, state: 'neutral', fn: keyed([
+    [0, {}],
+    [0.3, { armR: 150, eyes: 'happy', mouth: 'grin', mouthOpen: 0.6, tilt: 6, look: [0.6, -0.3] }],
+    [0.45, { armR: 118, eyes: 'squeeze', mouth: 'grin', mouthOpen: 1, tilt: 10, y: -4, sparkle: 1, look: [0.6, -0.2] }],
+    [0.7, { armR: 130, eyes: 'happy', mouth: 'grin', mouthOpen: 0.7, tilt: 4, tail: 25 }],
+    [1, {}],
+  ]) },
   bed: { ru: 'Спит в кроватке', frames: 48, fps: 12, state: 'neutral', fn: (p, t) => {
     const b = Math.sin(TAU * t);
     Object.assign(p, { bed: 1, zzz: [Math.cos(TAU * t), Math.sin(TAU * t)], eyeL: 'closed', eyeR: 'closed', mouth: 'o', mouthOpen: 0.25 + 0.15 * b, blush: 0.45,

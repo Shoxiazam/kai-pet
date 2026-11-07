@@ -665,6 +665,8 @@ def test_menu_offers_fit_and_dialog_saves(pet, monkeypatch, tmp_path):
     ({"msedge.exe"}, "Подкаст про ИИ — выпуск 12 - YouTube", False),
     ({"chrome.exe"}, "Как приготовить плов за 30 минут - YouTube", False),
     ({"vlc.exe"}, "Queen - Bohemian Rhapsody - VLC media player", True),
+    ({"chrome.exe"}, "Яндекс Музыка — собираем музыку и подкасты для вас - Google Chrome", True),   # сайт, а не подкаст
+    ({"chrome.exe"}, "Believer — Imagine Dragons. Яндекс Музыка - Google Chrome", True),
 ])
 def test_is_music(apps, title, music):
     assert pet_module.is_music(apps, title, [0.25] * 60) is music
