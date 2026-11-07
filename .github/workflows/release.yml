@@ -18,9 +18,10 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        run: python -m pip install -r requirements.txt -r requirements-dev.txt pyinstaller
-      - name: Tests
-        run: python -m pytest -q -o faulthandler_timeout=120
+        run: python -m pip install -r requirements.txt pyinstaller
+      # Тесты гоняет tests.yml на каждый push, в том числе на этот тег; здесь — только сборка.
+      - name: Smoke check (exporter imports, frames are there)
+        run: python -c "import kai_pet.export, kai_pet.pet as p; assert (p.ASSETS / 'frames' / p.NEWEST_ANIM).is_dir()"
       - name: Build Kai (folder, fast start)
         run: python build_exe.py
       - name: Installer KaiPet-Setup.exe
