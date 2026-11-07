@@ -38,9 +38,11 @@ from PySide6.QtGui import QAction, QColor, QCursor, QDesktopServices, QFont, QGu
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QInputDialog, QMenu, QWidget
 
-from . import commands, sounds
+from . import commands, guard, sounds
 from .bubble import Bubble
 from .config import Config
+from .friend import FRIENDS, Friends
+from .games import GAMES, Games
 
 log = logging.getLogger(__name__)
 
@@ -1050,6 +1052,9 @@ class Pet(QWidget):
         self._weather_timer = QTimer(self)
         self._weather_timer.timeout.connect(self.check_weather)
         self._weather_timer.start(3000)          # первый раз — вскоре после запуска, дальше раз в 30 минут
+        self.games = Games(self)                  # прятки, догонялки, камень-ножницы-бумага
+        self.guard = guard.Guard(self)            # сторож: кто-то трогает ноутбук, пока вас нет
+        self.friends = Friends(self)              # второй питомец рядом с Каем
         wanted = self._effective()
         if wanted != self.look:
             QTimer.singleShot(0, lambda: self._wear(wanted, announce=False, greet=True))   # образ из прошлого раза
@@ -1061,6 +1066,9 @@ class Pet(QWidget):
         """
         for timer in (self._timer, self._watch, self._perch, self._ear, self._weather_timer):
             timer.stop()
+        self.games.stop()
+        self.guard.disarm(say=False)
+        self.friends.shutdown()
         if self._export is not None:
             self._export.finished.disconnect()
             self._export.kill()
@@ -1435,6 +1443,12 @@ class Pet(QWidget):
 
     def command(self, text: str) -> bool:
         """Фраза Каю: «передай Антону привет», «покажи сердечко», «надень шарф»… False — это не ему."""
+        if self.games.command(text) or self.friends.command(text):
+            return True
+        on = guard.command(text)
+        if on is not None:
+            self.guard.arm() if on else self.guard.disarm()
+            return True
         act = commands.parse(text)
         if not act:
             return False
@@ -1584,7 +1598,7 @@ class Pet(QWidget):
 
     def _maybe_chase(self) -> None:
         """Мышкой трясут рядом с Каем — он охотится: подбегает к курсору и прыгает."""
-        if not self.chase_on or self.once or self.loop != "idle" or self._press:
+        if not self.chase_on or self.once or self.loop != "idle" or self._press or self.games.active:
             return
         now, c = time.monotonic(), self._cursor()
         self._trail.append((now, c.x()))
@@ -1949,7 +1963,7 @@ class Pet(QWidget):
 
     def _follow_window(self) -> None:
         """Режим «на окне»: Кай сидит на верхней кромке окна впереди и ездит вместе с ним."""
-        if self._press:
+        if self._press or self.games.active:
             return
         if self._pin:
             self._follow_pin()
@@ -2016,6 +2030,26 @@ class Pet(QWidget):
         for name, title in GESTURES.items():
             gestures.addAction(title).triggered.connect(lambda _c=False, n=name: self.gesture(n, 2))
         menu.addAction("Угостить печенькой").triggered.connect(lambda _c=False: self.feed())
+        play = menu.addMenu("Поиграть")
+        for name, title in GAMES.items():
+            play.addAction(title).triggered.connect(lambda _c=False, n=name: self.games.start(n))
+        play.setEnabled(not self.games.active)
+        buddy = menu.addMenu("Друг Кая")
+        for key, info in FRIENDS.items():
+            action = buddy.addAction(f"{info['name']} — {info['about']}")
+            action.setCheckable(True)
+            action.setChecked(self.friends.here and self.friends.who == key)
+            action.triggered.connect(lambda _c=False, k=key: self.friends.invite(k))
+        if self.friends.here:
+            buddy.addSeparator()
+            buddy.addAction("Поболтать").triggered.connect(lambda _c=False: self.friends.scene("talk"))
+            buddy.addAction("Отпустить домой").triggered.connect(lambda _c=False: self.friends.leave())
+        if self.guard.armed:
+            menu.addAction("Снять охрану").triggered.connect(lambda _c=False: self.guard.disarm())
+        else:
+            action = menu.addAction("Сторожить ноутбук")
+            action.setEnabled(guard.supported())
+            action.triggered.connect(lambda _c=False: self.guard.arm())
         menu.addAction("Табличка…").triggered.connect(lambda _c=False: self._ask_sign())
         if self.sign_text:
             menu.addAction("Убрать табличку").triggered.connect(lambda _c=False: self.set_sign(""))
@@ -2207,7 +2241,7 @@ class Pet(QWidget):
             self._press = None
             if moved:
                 self._dropped()
-            else:
+            elif not self.games.clicked():         # в догонялках щелчок — это «поймал»
                 self._touch()
                 self.play("wave")
                 self._sound("meow")

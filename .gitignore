@@ -10,3 +10,4 @@ assets/looks/
 dist/
 build/
 *.spec
+assets/friend/
