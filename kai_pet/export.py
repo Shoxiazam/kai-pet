@@ -210,10 +210,14 @@ def main() -> int:
 
 
 def command() -> tuple[str, list[str]]:
-    """Как запустить экспорт отдельным процессом: из исходников — python -m, из .exe — сам KaiPet.exe --export."""
+    """Как запустить экспорт отдельным процессом: из исходников — этот файл по пути, из .exe — KaiPet.exe --export.
+
+    По пути, а не «python -m kai_pet.export»: в голосовом агенте kai_pet подключён через sys.path, и новый процесс
+    модуль не нашёл бы. Файлу пакет не нужен — только стандартная библиотека.
+    """
     if getattr(sys, "frozen", False):
         return sys.executable, ["--export"]
-    return sys.executable, ["-m", "kai_pet.export"]          # pythonw — без мелькающего окна консоли
+    return sys.executable, [str(Path(__file__).resolve())]   # pythonw — без мелькающего окна консоли
 
 
 if __name__ == "__main__":

@@ -359,7 +359,7 @@ def test_fit_dialog_preview_follows_sliders(tmp_path):
     from kai_pet.fit_dialog import FitDialog
     frag = pet_module.fit_svg(FREEPIK_LIKE, "head")
     dlg = FitDialog([("my_a", "колпак", "head"), ("my_b", "бант", "head")],
-                    lambda item, fit: pet_module.place_fragment(frag, "head", fit),
+                    lambda item, fit, slot="head": pet_module.place_fragment(frag, slot, fit),
                     {"my_b": {"scale": 1.2}}, QImage(str(pet_module.ASSETS / "look" / "center.png")),
                     pet_module.DEFAULT_FIT, first="my_b")
     assert dlg.current() == "my_b" and dlg.sliders["scale"].value() == 120   # открылась на надетой вещи
@@ -642,7 +642,7 @@ def test_menu_offers_fit_and_dialog_saves(pet, monkeypatch, tmp_path):
     pet.contextMenuEvent(Ev())
     assert "Подогнать свои вещи…" in titles
     saved = []
-    monkeypatch.setattr(pet, "save_fit", lambda item, fit: saved.append((item, fit["scale"])))
+    monkeypatch.setattr(pet, "save_fit", lambda item, fit, slot=None: saved.append((item, fit["scale"])))
 
     def run(dlg):
         dlg.sliders["scale"].setValue(150)
@@ -1086,3 +1086,40 @@ def test_custom_svg_can_go_on_the_body(tmp_path, monkeypatch):
     monkeypatch.setenv("KAI_ACCESSORIES", str(folder))
     mine = pet_module.custom_accessories()
     assert [slot for _n, slot, _f in mine.values()] == ["body"]
+
+
+TIE = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><polygon points="230,20 282,20 300,480 256,510 212,480" fill="#36c"/></svg>"""
+BLOB = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><circle cx="256" cy="256" r="200" fill="#c33"/></svg>"""
+
+
+def test_custom_item_slot_is_guessed_and_can_be_chosen(pet, monkeypatch, tmp_path):
+    folder = tmp_path / "acc"
+    folder.mkdir()
+    (folder / "accessory-man-svgrepo-com.svg").write_text(TIE, encoding="utf-8")     # высокий узкий — галстук
+    (folder / "звезда.svg").write_text(BLOB, encoding="utf-8")
+    (folder / "мои очки.svg").write_text(BLOB, encoding="utf-8")
+    mine = pet_module.custom_accessories()
+    slots = {name: slot for name, slot, _f in mine.values()}
+    assert slots == {"accessory-man-svgrepo-com": "neck", "звезда": "head", "мои очки": "face"}
+    star = next(k for k, (n, _s, _f) in mine.items() if n == "звезда")
+    monkeypatch.setattr(pet, "looks_root", lambda: tmp_path / "looks")
+    pet.save_fit(star, pet_module.DEFAULT_FIT, "hand")                     # выбрали в окне «Куда надеть»
+    assert pet_module.custom_accessories()[star][1] == "hand"
+    assert pet_module.all_accessories()[star][1] == "hand"
+
+
+def test_fit_dialog_changes_place(tmp_path):
+    QApplication.instance() or QApplication([])
+    from PySide6.QtGui import QImage
+    from kai_pet.fit_dialog import FitDialog
+    seen = []
+
+    def frag(item, fit, slot):
+        seen.append(slot)
+        return pet_module.place_fragment(pet_module.fit_svg(BLOB, slot), slot, fit)
+    dlg = FitDialog([("my_a", "звезда", "head")], frag, {"my_a": {"dx": 20}},
+                    QImage(str(pet_module.ASSETS / "look" / "center.png")), pet_module.DEFAULT_FIT)
+    assert dlg.place.currentData() == "head"
+    dlg.place.setCurrentIndex(dlg.place.findData("neck"))
+    assert dlg.slots["my_a"] == "neck" and seen[-1] == "neck"
+    assert dlg.fits["my_a"] == pet_module.DEFAULT_FIT                     # на новом месте — заново вписана

@@ -152,10 +152,19 @@ FIDGET_EVERY_S = (150, 360)                          # раз в 2,5–6 мин�
 MISS_AFTER_H = 24                                    # не гладили и не кормили сутки — скучает
 DEFAULT_LOOK = {"kind": "cat", "color": "gray", "acc": []}
 SLOTS = ("head", "neck", "face", "hand", "body")   # куда можно класть свои SVG
+SLOT_NAMES = {"head": "На голову", "neck": "На шею", "face": "На лицо", "hand": "В лапку", "body": "На тело"}
+# Своя вещь без места в имени файла: место по словам в имени, потом по форме рисунка.
+_SLOT_WORDS = [("neck", r"tie|галстук|bow.?tie|бабочк|scarf|шарф|necklace|ожерель|бусы|медальон|chain|цепоч|collar|ошейник|pendant"),
+               ("face", r"glass|очк|mask|маск|monocle|монокл|mustache|усы|beard|бород"),
+               ("body", r"shirt|футбол|jacket|куртк|hoodie|худи|dress|плать|sweater|свитер|coat|пальто|suit|костюм|vest|жилет"),
+               ("hand", r"umbrella|зонт|sword|меч|wand|палочк|flag|флаг|cup|кружк|balloon|шарик|flower|цвет|guitar|гитар|bag|сумк|watch|часы|bracelet|браслет"),
+               ("head", r"hat|шап|шляп|cap|кепк|crown|корон|helmet|шлем|bow|бант|hair|волос|horn|рог|ears|уш")]
+_slot_cache: dict[tuple[str, float], str] = {}
 CUSTOM_MAX_BYTES = 2_000_000  # своя вещь — картинка, а не фотоальбом
 # Куда ставить скачанную вещь в кадре 256: x, y, ширина, высота, выравнивание (шапка садится на макушку).
 SLOT_BOX = {"body": (60, 170, 136, 62, "xMidYMid"), "head": (68, 34, 120, 92, "xMidYMax"), "neck": (66, 166, 124, 44, "xMidYMid"),
             "face": (76, 124, 104, 56, "xMidYMid"), "hand": (164, 140, 84, 92, "xMidYMid")}
+TIE_BOX = (100, 162, 56, 66, "xMidYMin")     # галстук: верх у воротника, вниз по груди
 SVG_NS, XLINK_NS = "http://www.w3.org/2000/svg", "http://www.w3.org/1999/xlink"
 _BG_ID = re.compile(r"^(?:background|bg|фон)", re.I)
 _SHAPES = {"path", "rect", "circle", "ellipse", "polygon", "polyline", "line", "text", "image", "use"}
@@ -665,25 +674,65 @@ def accessories_dir() -> Path:
     return Path(base) / "KaiPet" / "accessories" if base else Path.home() / ".kai-pet" / "accessories"
 
 
+def guess_slot(name: str, file: Path | None = None) -> str:
+    """Куда надеть вещь без места в имени: по словам («галстук», «glasses», «часы»), иначе по форме — галстук
+    (высокий) и бабочка (широкая) на шею, остальное на голову. Ошибся — место меняют в «Подогнать свои вещи»."""
+    low = name.lower()
+    for slot, words in _SLOT_WORDS:
+        if re.search(words, low):
+            return slot
+    if file is None:
+        return "head"
+    try:
+        key = (str(file), file.stat().st_mtime)
+    except OSError:
+        return "head"
+    if key not in _slot_cache:
+        slot = "head"
+        try:
+            text = file.read_text(encoding="utf-8", errors="replace")
+            if len(text) <= CUSTOM_MAX_BYTES:
+                root = ET.fromstring(text.encode("utf-8"))
+                vb = _viewbox(root)
+                if vb and vb != (0.0, 0.0, 256.0, 256.0):
+                    _strip_background(root, vb)
+                    _bx, _by, bw, bh = _content_box(ET.tostring(root, encoding="unicode"), vb)
+                    tall, wide = (bh / bw, bw / bh) if bw and bh else (1.0, 1.0)
+                    if tall >= 1.4 or wide >= 1.7:
+                        slot = "neck"          # галстук (высокий) или бабочка (широкая) — на шею
+        except (OSError, ET.ParseError, ValueError) as e:
+            log.debug("Форма вещи %s не прочитана: %s", file, e)
+        _slot_cache[key] = slot
+    return _slot_cache[key]
+
+
 def custom_accessories(folder: Path | None = None) -> dict[str, tuple[str, str, Path]]:
     """Свои вещи: <место>-<название>.svg (head-bow.svg, neck-tie.svg, face-mask.svg) → {id: (название, место, файл)}.
 
-    Без места в имени — на голову. Рисовать в координатах Кая 256×256 (голова — около 128,120).
+    Место: выбранное в «Подогнать свои вещи» → из имени файла → угаданное (guess_slot).
+    Рисовать можно и в координатах Кая 256×256 (голова — около 128,120).
     """
     folder = folder or accessories_dir()
     try:
         files = sorted(folder.glob("*.svg"))
     except OSError:
         return {}
+    chosen = load_state().get("custom_slot")
+    chosen = chosen if isinstance(chosen, dict) else {}
     found = {}
     for f in files:
         slot, _, name = f.stem.partition("-")
         if slot not in SLOTS or not name:
-            slot, name = "head", f.stem
+            slot, name = "", f.stem
         slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
         if not slug or slug != name.lower():           # кириллица, пробелы — плюс короткий хэш, чтобы имена не совпали
             slug = (slug + "_" if slug else "") + hashlib.md5(name.encode()).hexdigest()[:6]
-        found["my_" + slug] = (name, slot, f)
+        item = "my_" + slug
+        if chosen.get(item) in SLOTS:
+            slot = chosen[item]
+        elif not slot:
+            slot = guess_slot(name, f)
+        found[item] = (name, slot, f)
     return found
 
 
@@ -792,9 +841,11 @@ def fit_svg(text: str, slot: str) -> str:
     _drop_outside(root, box)
     bx, by, bw, bh = box
     x, y, w, h, align = SLOT_BOX.get(slot, SLOT_BOX["head"])
+    if slot == "neck" and bw and bh / bw >= 1.4:
+        x, y, w, h, align = TIE_BOX            # высокое на шее (галстук) — от воротника вниз, а не в полоску шарфа
     k = min(w / bw, h / bh)                    # вписать в место вещи, не искажая
     ox = x + (w - bw * k) / 2 - bx * k
-    oy = y + (h - bh * k) * (1.0 if align.endswith("YMax") else 0.5) - by * k
+    oy = y + (h - bh * k) * (1.0 if align.endswith("YMax") else 0.0 if align.endswith("YMin") else 0.5) - by * k
     inner = "".join(ET.tostring(child, encoding="unicode") for child in root)
     return f'<g transform="translate({ox:.2f} {oy:.2f}) scale({k:.5f})">{inner}</g>'
 
@@ -2174,11 +2225,16 @@ class Pet(QWidget):
             log.warning("Своя вещь %s не прочитана: %s", file, e)
             return ""
 
-    def save_fit(self, item: str, fit: dict) -> None:
-        """Запомнить подгонку и перерисовать: надетый образ — сейчас, остальные с этой вещью — когда наденут."""
+    def save_fit(self, item: str, fit: dict, slot: str | None = None) -> None:
+        """Запомнить подгонку (и место) и перерисовать: надетый образ — сейчас, остальные с этой вещью — когда наденут."""
         fits = self.custom_fits()
         fits[item] = normalize_fit(fit)
         save_state("custom_fit", fits)
+        if slot in SLOTS:
+            slots = load_state().get("custom_slot")
+            slots = dict(slots) if isinstance(slots, dict) else {}
+            slots[item] = slot
+            save_state("custom_slot", slots)
         root = self.looks_root()
         for d in (root.iterdir() if root.is_dir() else []):
             if d.is_dir() and d != self.dir and item in d.name.split("-", 2)[-1].split("+"):
@@ -2202,18 +2258,20 @@ class Pet(QWidget):
             return
         cache: dict[str, str] = {}
 
-        def fragment(item: str, fit: dict) -> str:
-            if item not in cache:
-                cache[item] = self._fragment(item, mine)
-            return place_fragment(cache[item], mine[item][1], fit)
+        def fragment(item: str, fit: dict, slot: str | None = None) -> str:
+            slot = slot or mine[item][1]
+            if (item, slot) not in cache:
+                cache[(item, slot)] = self._fragment(item, {**mine, item: (mine[item][0], slot, mine[item][2])})
+            return place_fragment(cache[(item, slot)], slot, fit)
         worn = next((a for a in self.look["acc"] if a in mine), None)
         dlg = FitDialog([(k, name, slot) for k, (name, slot, _f) in mine.items()], fragment, self.custom_fits(),
                         self._preview_base(), DEFAULT_FIT, first=worn)
         if self._run_dialog(dlg):
             before = self.custom_fits()
             for item, fit in dlg.fits.items():
-                if normalize_fit(fit) != normalize_fit(before.get(item)):
-                    self.save_fit(item, fit)
+                moved = dlg.slots[item] != mine[item][1]
+                if moved or normalize_fit(fit) != normalize_fit(before.get(item)):
+                    self.save_fit(item, fit, dlg.slots[item] if moved else None)
 
     def _run_dialog(self, dlg) -> bool:
         return bool(dlg.exec())
