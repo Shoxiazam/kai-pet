@@ -81,11 +81,15 @@ class Renderer:
         self.anims = self.dt.eval("Object.fromEntries(Object.entries(Kai.ANIMS).map(([k, v]) => [k, [v.frames, v.fps]]))")
 
     def frames(self, anim: str, look: dict) -> tuple[list[QImage], int]:
+        """Кадры движения; «mood:grumpy» — живая эмоция (дыхание и моргание), как у Кая на экране."""
         self.dt.eval(f"Object.assign(Kai.LOOK, {json.dumps(look)}), true")
-        n, fps = self.anims[anim]
+        if anim.startswith("mood:"):
+            state, (n, fps), name = anim[5:], (24, 12), "idle"
+        else:
+            state, (n, fps), name = None, self.anims[anim], anim
         out = []
         for i in range(n):
-            b64 = self.dt.eval(f"grid([Kai.frame(null, {json.dumps(anim)}, {i / n})], 1, {SIZE})")
+            b64 = self.dt.eval(f"grid([Kai.frame({json.dumps(state)}, {json.dumps(name)}, {i / n})], 1, {SIZE})")
             out.append(QImage.fromData(base64.b64decode(b64), "PNG"))
         return out, fps
 

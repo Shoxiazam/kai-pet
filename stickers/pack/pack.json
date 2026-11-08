@@ -1,10 +1,5 @@
 {
- "title": "Кай",
- "look": {
-  "kind": "cat",
-  "color": "gray",
-  "acc": []
- },
+ "title": "Кай и друзья",
  "stickers": [
   {
    "file": "hello.webm",
@@ -21,10 +16,6 @@
   {
    "file": "yay.webm",
    "emoji": "🎉"
-  },
-  {
-   "file": "dance.webm",
-   "emoji": "💃"
   },
   {
    "file": "laugh.webm",
@@ -67,6 +58,318 @@
    "emoji": "🍪"
   },
   {
+   "file": "dance.webm",
+   "emoji": "💃"
+  },
+  {
+   "file": "disco.webm",
+   "emoji": "🕺"
+  },
+  {
+   "file": "guitar.webm",
+   "emoji": "🎸"
+  },
+  {
+   "file": "bye.webm",
+   "emoji": "🖐"
+  },
+  {
+   "file": "purr.webm",
+   "emoji": "😌"
+  },
+  {
+   "file": "stretch.webm",
+   "emoji": "🙆"
+  },
+  {
+   "file": "yawn.webm",
+   "emoji": "🥱"
+  },
+  {
+   "file": "wash.webm",
+   "emoji": "🧼"
+  },
+  {
+   "file": "tail.webm",
+   "emoji": "🌪"
+  },
+  {
+   "file": "look.webm",
+   "emoji": "👀"
+  },
+  {
+   "file": "robot.webm",
+   "emoji": "🤖"
+  },
+  {
+   "file": "waltz.webm",
+   "emoji": "💫"
+  },
+  {
+   "file": "headbang.webm",
+   "emoji": "🤘"
+  },
+  {
+   "file": "hiphop.webm",
+   "emoji": "😎"
+  },
+  {
+   "file": "grumpy.webm",
+   "emoji": "😤"
+  },
+  {
+   "file": "surprised.webm",
+   "emoji": "😮"
+  },
+  {
+   "file": "proud.webm",
+   "emoji": "😌"
+  },
+  {
+   "file": "confused.webm",
+   "emoji": "😵"
+  },
+  {
+   "file": "inspired.webm",
+   "emoji": "💡"
+  },
+  {
+   "file": "tired.webm",
+   "emoji": "😩"
+  },
+  {
+   "file": "hoodie_groove.webm",
+   "emoji": "🎧"
+  },
+  {
+   "file": "hoodie_bounce.webm",
+   "emoji": "🎶"
+  },
+  {
+   "file": "cool_like.webm",
+   "emoji": "😎"
+  },
+  {
+   "file": "cool_bow.webm",
+   "emoji": "🎩"
+  },
+  {
+   "file": "pajama_yawn.webm",
+   "emoji": "🥱"
+  },
+  {
+   "file": "pajama_bed.webm",
+   "emoji": "🌙"
+  },
+  {
+   "file": "rain_sad.webm",
+   "emoji": "🌧"
+  },
+  {
+   "file": "rain_wave.webm",
+   "emoji": "☔"
+  },
+  {
+   "file": "shark_spin.webm",
+   "emoji": "🦈"
+  },
+  {
+   "file": "shark_jump.webm",
+   "emoji": "🌊"
+  },
+  {
+   "file": "king_proud.webm",
+   "emoji": "👑"
+  },
+  {
+   "file": "king_disco.webm",
+   "emoji": "🥳"
+  },
+  {
+   "file": "nerd_think.webm",
+   "emoji": "🤓"
+  },
+  {
+   "file": "nerd_working.webm",
+   "emoji": "💻"
+  },
+  {
+   "file": "winter_wave.webm",
+   "emoji": "❄️"
+  },
+  {
+   "file": "winter_hug.webm",
+   "emoji": "☃️"
+  },
+  {
+   "file": "dino_bounce.webm",
+   "emoji": "🦖"
+  },
+  {
+   "file": "dino_laugh.webm",
+   "emoji": "🦕"
+  },
+  {
+   "file": "mira_wave.webm",
+   "emoji": "🦊"
+  },
+  {
+   "file": "mira_laugh.webm",
+   "emoji": "😆"
+  },
+  {
+   "file": "mira_disco.webm",
+   "emoji": "💃"
+  },
+  {
+   "file": "mira_grumpy.webm",
+   "emoji": "😒"
+  },
+  {
+   "file": "tosha_think.webm",
+   "emoji": "🧐"
+  },
+  {
+   "file": "tosha_hug.webm",
+   "emoji": "🐻"
+  },
+  {
+   "file": "tosha_bow.webm",
+   "emoji": "🙏"
+  },
+  {
+   "file": "bunya_heart.webm",
+   "emoji": "💖"
+  },
+  {
+   "file": "bunya_jump.webm",
+   "emoji": "🐰"
+  },
+  {
+   "file": "bunya_shy.webm",
+   "emoji": "🥰"
+  },
+  {
+   "file": "duo_mira_hold.webm",
+   "emoji": "🤝"
+  },
+  {
+   "file": "duo_tosha_hold.webm",
+   "emoji": "🫶"
+  },
+  {
+   "file": "duo_bunya_hold.webm",
+   "emoji": "💞"
+  },
+  {
+   "file": "duo_mira_high.webm",
+   "emoji": "🙌"
+  },
+  {
+   "file": "duo_tosha_high.webm",
+   "emoji": "✋"
+  },
+  {
+   "file": "duo_bunya_hug.webm",
+   "emoji": "🤗"
+  },
+  {
+   "file": "duo_mira_disco.webm",
+   "emoji": "🪩"
+  },
+  {
+   "file": "duo_tosha_laugh.webm",
+   "emoji": "🤣"
+  },
+  {
+   "file": "duo_bunya_clap.webm",
+   "emoji": "👯"
+  },
+  {
+   "file": "duo_mira_fight.webm",
+   "emoji": "😠"
+  },
+  {
+   "file": "meme_base.webm",
+   "emoji": "💯"
+  },
+  {
+   "file": "meme_cringe.webm",
+   "emoji": "😬"
+  },
+  {
+   "file": "meme_house.webm",
+   "emoji": "🏠"
+  },
+  {
+   "file": "meme_meh.webm",
+   "emoji": "😐"
+  },
+  {
+   "file": "meme_friday.webm",
+   "emoji": "🍻"
+  },
+  {
+   "file": "meme_monday.webm",
+   "emoji": "😫"
+  },
+  {
+   "file": "meme_works.webm",
+   "emoji": "⚠️"
+  },
+  {
+   "file": "meme_code.webm",
+   "emoji": "🐛"
+  },
+  {
+   "file": "meme_relatable.webm",
+   "emoji": "👌"
+  },
+  {
+   "file": "meme_lol.webm",
+   "emoji": "🤣"
+  },
+  {
+   "file": "meme_no.webm",
+   "emoji": "🙅"
+  },
+  {
+   "file": "meme_yes.webm",
+   "emoji": "🙋"
+  },
+  {
+   "file": "meme_wait.webm",
+   "emoji": "⏳"
+  },
+  {
+   "file": "meme_watch.webm",
+   "emoji": "🕵"
+  },
+  {
+   "file": "meme_vacation.webm",
+   "emoji": "🏖"
+  },
+  {
+   "file": "meme_party.webm",
+   "emoji": "🎊"
+  },
+  {
+   "file": "meme_shark.webm",
+   "emoji": "🦈"
+  },
+  {
+   "file": "meme_coffee.webm",
+   "emoji": "☕"
+  },
+  {
+   "file": "meme_brain.webm",
+   "emoji": "🤯"
+  },
+  {
+   "file": "meme_gg.webm",
+   "emoji": "🏆"
+  },
+  {
    "file": "sign_hi.webm",
    "emoji": "🙋"
   },
@@ -79,16 +382,48 @@
    "emoji": "👌"
   },
   {
-   "file": "disco.webm",
-   "emoji": "🕺"
+   "file": "sign_bye.webm",
+   "emoji": "👋"
   },
   {
-   "file": "guitar.webm",
-   "emoji": "🎸"
+   "file": "sign_love.webm",
+   "emoji": "😍"
   },
   {
-   "file": "duo.webm",
-   "emoji": "🤝"
+   "file": "sign_miss.webm",
+   "emoji": "🥺"
+  },
+  {
+   "file": "sign_bday.webm",
+   "emoji": "🎂"
+  },
+  {
+   "file": "sign_dnd.webm",
+   "emoji": "⛔"
+  },
+  {
+   "file": "sign_lunch.webm",
+   "emoji": "🍽"
+  },
+  {
+   "file": "sign_busy.webm",
+   "emoji": "📵"
+  },
+  {
+   "file": "sign_morning.webm",
+   "emoji": "☀️"
+  },
+  {
+   "file": "sign_night.webm",
+   "emoji": "🌙"
+  },
+  {
+   "file": "sign_later.webm",
+   "emoji": "🕐"
+  },
+  {
+   "file": "sign_online.webm",
+   "emoji": "📱"
   }
  ]
 }

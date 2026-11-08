@@ -158,8 +158,9 @@ Windows может показать «Система Windows защитила в
 разрешение), в прятках прячется за краем экрана, для новых образов нужен Chrome или Edge. Обновление — новым .dmg.
 
 ## Стикеры для Telegram
-21 живой стикер с Каем (`stickers/pack`, WebM 512×512 по правилам Telegram) — нарисованы из того же персонажа:
-`python tools/make_stickers.py` (нужны Edge или Chrome и `pip install imageio-ffmpeg`; свой наряд — `--look`).
+106 живых стикеров «Кай и друзья» (`stickers/pack`, WebM 512×512 по правилам Telegram): наряды, Мира, Тоша и Буня,
+парочки за лапки, мемы с подписью и таблички — `python tools/make_sticker_pack.py` (набор описан в нём же);
+личный короткий набор — `python tools/make_stickers.py` (нужны Edge или Chrome и `pip install imageio-ffmpeg`; свой наряд — `--look`).
 Набор в Telegram создаёт бот без библиотек `tools/sticker_bot.py`:
 1. у @BotFather `/newbot` → токен в `stickers/bot_token.txt` (в git не попадает);
 2. `python tools/sticker_bot.py create` и напишите боту `/start` — он загрузит набор и пришлёт ссылку t.me/addstickers/…;

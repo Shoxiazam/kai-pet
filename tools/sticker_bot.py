@@ -25,6 +25,7 @@ PACK = ROOT / "stickers" / "pack"
 TOKEN_FILE = ROOT / "stickers" / "bot_token.txt"
 API = os.environ.get("KAI_TG_API", "https://api.telegram.org")
 PERSONAL_EVERY_S = 600                     # личный набор — не чаще раза в 10 минут на человека
+FIRST_BATCH, MAX_SET = 50, 120              # Telegram: набор создаётся до 50 стикерами, всего до 120
 PERSONAL = ["hello", "love", "like", "yay", "dance", "laugh", "hug", "sign_hi", "sign_thanks", "sleep"]
 
 
@@ -74,23 +75,23 @@ class Bot:
         pack = json.loads((folder / "pack.json").read_text(encoding="utf-8"))["stickers"]
         if only:
             pack = [s for s in pack if Path(s["file"]).stem in only]
+        pack = pack[:MAX_SET]
         try:
-            have = {s.get("emoji") for s in self.call("getStickerSet", name=name)["stickers"]}
-            existing = True
+            have = len(self.call("getStickerSet", name=name)["stickers"])      # набор уже есть — догружаем остаток
         except RuntimeError:
-            have, existing = set(), False
-        first, rest = (pack, []) if not existing else ([], pack)
-        if first:
+            have = 0
+        if have == 0:
+            first = pack[:FIRST_BATCH]                     # createNewStickerSet принимает не больше 50 сразу
             stickers = [{"sticker": f"attach://s{i}", "format": "video", "emoji_list": [s["emoji"]]} for i, s in enumerate(first)]
             files = {f"s{i}": folder / s["file"] for i, s in enumerate(first)}
-            self.call("createNewStickerSet", files=files, http_timeout=300, user_id=user_id, name=name, title=title,
+            self.call("createNewStickerSet", files=files, http_timeout=600, user_id=user_id, name=name, title=title,
                       stickers=json.dumps(stickers, ensure_ascii=False))
-        for s in rest:
-            if s["emoji"] in have:
-                continue
+            have = len(first)
+        for i, s in enumerate(pack[have:], start=have):
             self.call("addStickerToSet", files={"s0": folder / s["file"]}, http_timeout=120, user_id=user_id, name=name,
                       sticker=json.dumps({"sticker": "attach://s0", "format": "video", "emoji_list": [s["emoji"]]},
                                          ensure_ascii=False))
+            print(f"  добавлен {i + 1}/{len(pack)}", flush=True)
         return f"https://t.me/addstickers/{name}"
 
 
@@ -127,7 +128,7 @@ def create(bot: Bot) -> str:
     msg = wait_start(bot)
     user, chat = msg["from"]["id"], msg["chat"]["id"]
     bot.say(chat, "Загружаю стикеры Кая… это пара минут.")
-    link = bot.upload_set(user, bot.set_name("kai_pet"), "Кай — питомец на рабочем столе", PACK)
+    link = bot.upload_set(user, bot.set_name("kai_pet"), "Кай и друзья", PACK)
     bot.say(chat, f"Готово! Стикеры Кая: {link}\nДелитесь ссылкой — добавить может любой.")
     (ROOT / "stickers" / "pack_link.txt").write_text(link, encoding="utf-8")
     return link
