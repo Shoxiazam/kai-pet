@@ -13,8 +13,9 @@ from .pet import ASSETS, FROZEN, Pet
 
 
 def _logging() -> None:
-    if FROZEN:      # у .exe нет консоли — ошибки пишутся в профиль пользователя
-        folder = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "KaiPet"
+    if FROZEN:      # у .exe и .app нет консоли — ошибки пишутся в папку данных Кая
+        from .host import data_dir
+        folder = data_dir()
         folder.mkdir(parents=True, exist_ok=True)
         logging.basicConfig(filename=folder / "kai.log", level=logging.INFO,
                             format="%(asctime)s %(levelname)s %(message)s")
@@ -24,7 +25,7 @@ def _logging() -> None:
 
 def tray(app: QApplication, pet: Pet) -> QSystemTrayIcon:
     """Значок у часов: показать или спрятать Кая, запуск вместе с Windows, выход."""
-    icon = QSystemTrayIcon(QIcon(str(ASSETS / "icon.ico")), app)
+    icon = QSystemTrayIcon(QIcon(str(ASSETS / ("icon.png" if sys.platform == "darwin" else "icon.ico"))), app)
     icon.setToolTip("Кай")
     menu = QMenu()
     toggle = menu.addAction("Спрятать Кая")
@@ -33,7 +34,7 @@ def tray(app: QApplication, pet: Pet) -> QSystemTrayIcon:
         pet.setVisible(not pet.isVisible())
         toggle.setText("Спрятать Кая" if pet.isVisible() else "Показать Кая")
     toggle.triggered.connect(lambda _c=False: show_hide())
-    start = QAction("Запускать вместе с Windows", menu)
+    start = QAction("Запускать вместе с Windows" if sys.platform == "win32" else "Запускать при входе в систему", menu)
     start.setCheckable(True)
     start.setChecked(autostart.enabled())
     start.setEnabled(autostart.supported())

@@ -79,6 +79,8 @@ class Ears(QWidget):
         super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
+        from .host import keep_visible
+        keep_visible(self)
         self.pix, self.on_found = pix, on_found
         dpr = pix.devicePixelRatioF() or 1.0
         w, h = round(pix.width() / dpr), round(pix.height() / dpr)

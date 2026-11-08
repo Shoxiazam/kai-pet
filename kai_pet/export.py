@@ -28,7 +28,11 @@ BROWSERS = [os.environ.get("KAI_BROWSER", ""),
             str(Path(os.environ.get("LOCALAPPDATA", "")) / "Google/Chrome/Application/chrome.exe"),
             "/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser",
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"]
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+            "/Applications/Arc.app/Contents/MacOS/Arc",
+            str(Path.home() / "Applications/Google Chrome.app/Contents/MacOS/Google Chrome")]
 
 
 def find_browser() -> str | None:

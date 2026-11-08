@@ -36,7 +36,7 @@ def photos_dir() -> Path:
 
 
 def supported() -> bool:
-    return sys.platform == "win32"          # время последнего касания мыши и клавиатуры знаем только на Windows
+    return sys.platform in ("win32", "darwin")   # время последнего касания мыши и клавиатуры знаем здесь
 
 
 def command(text: str) -> bool | None:

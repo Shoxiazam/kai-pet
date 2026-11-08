@@ -22,6 +22,8 @@ class Bubble(QWidget):
     def __init__(self):
         super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
                          | Qt.WindowDoesNotAcceptFocus)
+        from .host import keep_visible
+        keep_visible(self)
         self.asking = False
         self.anchor = QRect()
         self.setAttribute(Qt.WA_TranslucentBackground)

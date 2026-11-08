@@ -38,8 +38,9 @@ def newer(remote: str, local: str = __version__) -> bool:
 
 
 def installed() -> bool:
-    """Обновлять установщиком можно только установленного Кая (собранный .exe)."""
-    return bool(getattr(sys, "frozen", False))
+    """Обновлять установщиком можно только установленного Кая на Windows (KaiPet.exe из KaiPet-Setup.exe).
+    На Mac новую версию ставят перетаскиванием из .dmg — проверку обновлений там не показываем."""
+    return bool(getattr(sys, "frozen", False)) and sys.platform == "win32"
 
 
 def latest(timeout: float = 10) -> tuple[str, str] | None:

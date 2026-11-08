@@ -154,6 +154,7 @@
           transition-delay: calc(var(--i, 0) * 70ms); }
   .rise.in { opacity: 1; transform: none; }
   .no-js .rise { opacity: 1; transform: none; }
+  body:not(.is-mac) .only-mac, .is-mac .only-win { display: none; }   /* своё для Mac и для Windows */
 
   @media (max-width: 860px) {
     .hero, .duo { grid-template-columns: 1fr; }
@@ -188,13 +189,17 @@
         <p class="lead measure rise" style="--i:2">Кай радуется, когда вы рядом, танцует под музыку, переодевается, зовёт
           друзей в гости и сторожит ноутбук, пока вас нет. Бесплатно и без рекламы.</p>
         <div class="actions rise" style="--i:3">
-          <a class="btn" id="download" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-Setup.exe">
+          <a class="btn" id="download" data-win="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-Setup.exe"
+             data-mac="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-macOS.dmg"
+             href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-Setup.exe">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 21h16"/></svg>
-            Скачать для Windows
+            <span id="download-label">Скачать для Windows</span>
           </a>
-          <a class="ghost" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-portable.zip">Без установки (zip)</a>
+          <a class="ghost only-win" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-macOS.dmg">Для Mac</a>
+          <a class="ghost only-mac" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-Setup.exe">Для Windows</a>
+          <a class="ghost only-win" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-portable.zip">Без установки (zip)</a>
         </div>
-        <p class="meta rise" style="--i:4" id="meta">Windows 10 и 11 · около 70 МБ · без прав администратора</p>
+        <p class="meta rise" style="--i:4" id="meta">Windows 10 и 11 · macOS на Apple M1 и новее · бесплатно</p>
         <p class="status" id="status" role="status" aria-live="polite"></p>
       </div>
       <div class="stage rise" style="--i:2" aria-hidden="true">
@@ -207,12 +212,21 @@
       <p class="eyebrow">Установка</p>
       <h2 id="t-install">Три шага — и Кай уже машет вам</h2>
       <p class="sub measure">Ничего дополнительно ставить не нужно: ни Python, ни Node.js. Обновления Кай потом ставит сам.</p>
-      <div class="steps">
+      <div class="steps only-win">
         <div class="step rise" style="--i:0"><h3>Скачайте</h3><p>Кнопка «Скачать для Windows» — загрузится KaiPet-Setup.exe.</p></div>
         <div class="step rise" style="--i:1"><h3>Запустите</h3><p>Откройте файл и нажмите «Установить». Можно сразу включить запуск вместе с Windows.</p></div>
         <div class="step rise" style="--i:2"><h3>Готово</h3><p>Кай появится в углу экрана. Правый клик по нему — меню, игры, друзья и гардероб.</p></div>
       </div>
-      <div class="note rise" style="--i:3"><span class="i" aria-hidden="true">🛡️</span>
+      <div class="steps only-mac">
+        <div class="step rise" style="--i:0"><h3>Скачайте</h3><p>«Скачать для Mac» — загрузится KaiPet-macOS.dmg.</p></div>
+        <div class="step rise" style="--i:1"><h3>Перетащите</h3><p>Откройте .dmg и перетащите Кая в папку «Программы».</p></div>
+        <div class="step rise" style="--i:2"><h3>Откройте</h3><p>Первый раз: правый клик по Каю → «Открыть». Дальше он запускается как обычно.</p></div>
+      </div>
+      <div class="note rise only-mac" style="--i:3"><span class="i" aria-hidden="true">🍏</span>
+        <p><b>macOS пишет «не удалось проверить разработчика»?</b> Откройте «Системные настройки» → «Конфиденциальность
+          и безопасность» и нажмите «Всё равно открыть». Для новых образов нужен Chrome или Edge; танцует Кай на Mac
+          под Spotify и «Музыку» — macOS один раз спросит, можно ли ему видеть, что играет.</p></div>
+      <div class="note rise only-win" style="--i:3"><span class="i" aria-hidden="true">🛡️</span>
         <p><b>Windows может спросить, доверяете ли вы программе</b> («Система Windows защитила ваш компьютер») — так бывает
           со всеми программами без платной цифровой подписи. Нажмите «Подробнее» → «Выполнить в любом случае».
           Код Кая открыт, его можно посмотреть на <a href="https://github.com/Shoxiazam/kai-pet">GitHub</a>.</p></div>
@@ -228,7 +242,7 @@
         <div class="f wide rise" style="--i:1"><div class="ic" aria-hidden="true">🎵</div><h3>Танцы под музыку</h3>
           <p>Spotify, Яндекс Музыка, YouTube — 11 танцев под настроение песни. Под подкасты и звонки не танцует.</p></div>
         <div class="f rise" style="--i:2"><div class="ic" aria-hidden="true">👕</div><h3>Гардероб</h3>
-          <p>4 вида, 8 цветов, шапки, очки, худи, костюм акулёнка и ещё 20 вещей.</p></div>
+          <p>4 вида, 8 цветов и 22 вещи — плюс свои картинки. Переодевается в шкафчике, а не на глазах.</p></div>
         <div class="f rise" style="--i:3"><div class="ic" aria-hidden="true">🎮</div><h3>Мини-игры</h3>
           <p>Прятки за окнами, догонялки, камень-ножницы-бумага.</p></div>
         <div class="f rise" style="--i:4"><div class="ic" aria-hidden="true">🛡️</div><h3>Сторож</h3>
@@ -252,6 +266,7 @@
             <li>Скажете одному «посмейся» или «дай пять» — сделают оба</li>
             <li>Почти 80 разговоров на 32 темы, паузы между ними как у живых</li>
             <li>Иногда спорят, но всегда мирятся</li>
+          <li>У каждого свой голос: Мира звонкая, Тоша басит, Буня пищит</li>
           </ul>
         </div>
         <div aria-hidden="true" style="display:grid;place-items:center">
@@ -280,7 +295,7 @@
         <details class="rise" style="--i:2"><summary>Нужен ли интернет?</summary><p>Только для погоды и обновлений. Всё остальное работает на вашем компьютере и никуда не отправляется.</p></details>
         <details class="rise" style="--i:3"><summary>Не будет ли тормозить компьютер?</summary><p>Кай лёгкий: обычно 1–2 % процессора. Спрятать его можно значком у часов.</p></details>
         <details class="rise" style="--i:4"><summary>Как удалить?</summary><p>Параметры Windows → Приложения → «Кай» → Удалить.</p></details>
-        <details class="rise" style="--i:5"><summary>Есть версия для Mac или Linux?</summary><p>Пока только Windows. На macOS и Linux Кая можно запустить из исходников — инструкция на GitHub.</p></details>
+        <details class="rise" style="--i:5"><summary>Есть версия для Mac?</summary><p>Да, для Mac на Apple M1 и новее — KaiPet-macOS.dmg. На Mac Кай танцует под Spotify и «Музыку» (громкость других программ macOS не показывает), а в прятках прячется за краем экрана. На Linux Кая можно запустить из исходников.</p></details>
       </div>
     </section>
 
@@ -298,6 +313,16 @@
 </div>
 <script>
   document.body.classList.remove('no-js');
+  // Mac — своя кнопка и свои шаги установки.
+  const isMac = /Mac/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '')
+    && !/iPhone|iPad/i.test(navigator.userAgent);
+  if (isMac) {
+    document.body.classList.add('is-mac');
+    const d = document.getElementById('download');
+    d.href = d.dataset.mac;
+    document.getElementById('download-label').textContent = 'Скачать для Mac';
+    document.querySelectorAll('.final .btn').forEach(b => b.href = d.dataset.mac);
+  }
   // Появление: первый экран — сразу, остальное — когда доедет до экрана (один раз).
   const items = document.querySelectorAll('.rise');
   if ('IntersectionObserver' in window) {
@@ -311,7 +336,8 @@
   const status = document.getElementById('status');
   document.querySelectorAll('a.btn').forEach(b => b.addEventListener('click', () => {
     b.setAttribute('aria-busy', 'true');
-    status.textContent = 'Скачивание началось — откройте KaiPet-Setup.exe, когда загрузится.';
+    status.textContent = isMac ? 'Скачивание началось — откройте KaiPet-macOS.dmg и перетащите Кая в «Программы».'
+                               : 'Скачивание началось — откройте KaiPet-Setup.exe, когда загрузится.';
     setTimeout(() => b.removeAttribute('aria-busy'), 1500);
   }));
 
@@ -319,11 +345,13 @@
   fetch('https://api.github.com/repos/Shoxiazam/kai-pet/releases/latest')
     .then(r => r.ok ? r.json() : Promise.reject(r.status))
     .then(rel => {
-      const a = (rel.assets || []).find(x => x.name === 'KaiPet-Setup.exe');
+      const want = isMac ? 'KaiPet-macOS.dmg' : 'KaiPet-Setup.exe';
+      const a = (rel.assets || []).find(x => x.name === want);
       if (!a) throw 'no-setup';
       const v = rel.tag_name.replace(/^v/, '');
-      document.getElementById('meta').textContent =
-        `Версия ${v} · Windows 10 и 11 · ${Math.round(a.size / 1048576)} МБ · без прав администратора`;
+      document.getElementById('meta').textContent = isMac
+        ? `Версия ${v} · macOS на Apple M1 и новее · ${Math.round(a.size / 1048576)} МБ`
+        : `Версия ${v} · Windows 10 и 11 · ${Math.round(a.size / 1048576)} МБ · без прав администратора`;
       document.getElementById('ver').textContent = `Версия ${v}: друзья, танцы вдвоём, обновление в один клик`;
     })
     .catch(err => {

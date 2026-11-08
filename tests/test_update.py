@@ -34,4 +34,7 @@ def test_only_installed_kai_updates_itself(monkeypatch):
     monkeypatch.delattr(sys, "frozen", raising=False)
     assert not update.installed()                         # из исходников — git pull
     monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(update.sys, "platform", "win32")
     assert update.installed()
+    monkeypatch.setattr(update.sys, "platform", "darwin")
+    assert not update.installed()                         # на Mac — из .dmg, без установщика Windows

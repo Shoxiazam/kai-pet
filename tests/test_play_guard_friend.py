@@ -340,3 +340,98 @@ def test_kai_command_makes_both_do_it(pet, monkeypatch, tmp_path):
     QTest.qWait(300)
     assert pet.once == "high" + pet.friends.toward_friend()
     assert w.once == "high" + pet.friends.toward_kai()
+
+
+# --- переодевание в шкафу ---
+def _ready_look(pet, monkeypatch, tmp_path):
+    """Образ, уже нарисованный раньше: переодеться можно без экспорта — видно только сценку со шкафом."""
+    from kai_pet import pet as pm
+    monkeypatch.setattr(pet, "looks_root", lambda: tmp_path / "looks")
+    look = pm.normalize_look({"acc": ["scarf"]})
+    folder = pet.look_dir(look)
+    shutil.copytree(ASSETS / "frames", folder / "frames")
+    return look
+
+
+def test_dressing_goes_through_wardrobe(pet, monkeypatch, tmp_path):
+    from kai_pet import wardrobe
+    monkeypatch.setattr(wardrobe, "MIN_INSIDE_S", 0.3)
+    look = _ready_look(pet, monkeypatch, tmp_path)
+    pet.show()
+    home = pet.pos()
+    pet.set_look(look)
+    assert pet.wardrobe.busy and pet.wardrobe.closet is not None and pet.wardrobe.closet.isVisible()
+    QTest.qWait(900)                                         # дошёл до шкафа, дверцы закрылись
+    assert pet.windowOpacity() == 1.0 or pet.wardrobe.inside
+    QTest.qWait(2000)                                        # вышел уже в обновке и вернулся на место
+    assert not pet.wardrobe.busy and pet.windowOpacity() == 1.0 and pet.pos() == home
+    assert pet.look == look and pet.bubble.text.text() in __import__("kai_pet.pet", fromlist=["DRESSED"]).DRESSED
+
+
+def test_wardrobe_skipped_when_kai_hidden_or_playing(pet, monkeypatch, tmp_path):
+    look = _ready_look(pet, monkeypatch, tmp_path)
+    pet.hide()
+    pet.set_look(look)
+    assert not pet.wardrobe.busy and pet.look == look       # спрятанный Кай переодевается сразу
+
+
+def test_wardrobe_close_restores_kai(pet):
+    pet.show()
+    pet.wardrobe.enter()
+    QTest.qWait(800)
+    pet.wardrobe.close()
+    assert pet.windowOpacity() == 1.0 and pet.wardrobe.closet is None and not pet.wardrobe.busy
+
+
+def test_friend_has_own_voice(pet, monkeypatch, tmp_path, played):
+    _friend(pet, monkeypatch, tmp_path)
+    pet.sounds_on = True
+    pet.friends.petted()
+    assert played and played[-1] == "purr.wav"
+    from kai_pet import sounds
+    paths = []
+    monkeypatch.setattr(sounds, "play", lambda p: paths.append(p))
+    pet.friends._say("Привет!")
+    assert "friends" in str(paths[-1]) and "mira" in str(paths[-1])   # не голос Кая
+
+
+# --- macOS ---
+def test_mac_autostart_writes_launch_agent(monkeypatch, tmp_path):
+    import plistlib
+    from kai_pet import autostart
+    monkeypatch.setattr(autostart.sys, "platform", "darwin")
+    monkeypatch.setattr(autostart.Path, "home", classmethod(lambda cls: tmp_path))
+    assert autostart.supported() and not autostart.enabled()
+    autostart.set_enabled(True)
+    data = plistlib.loads((tmp_path / "Library/LaunchAgents/com.shoxiazam.kaipet.plist").read_bytes())
+    assert data["RunAtLoad"] is True and data["ProgramArguments"]
+    assert autostart.enabled()
+    autostart.set_enabled(False)
+    assert not autostart.enabled()
+
+
+def test_mac_dances_to_player_track(pet, monkeypatch):
+    from kai_pet import pet as pm
+    monkeypatch.setattr(pm, "MAC", True)
+    pet.dance_on = True
+    pet._mac_track = "Кино - Группа крови"
+    pet._listen()
+    assert pet.music and pet.dance_style in pm.DANCES
+    pet._mac_track = ""
+    pet._listen()
+    assert not pet.music
+
+
+def test_mac_now_playing_reads_running_player(monkeypatch):
+    from kai_pet import host
+    monkeypatch.setattr(host, "MAC", True)
+    calls = []
+
+    def run(args, timeout=2.0):
+        calls.append(args[0])
+        if args[0] == "pgrep":
+            return "123" if args[-1] == "Music" else ""        # Spotify закрыт — его не трогаем
+        return "Кино - Звезда по имени Солнце"
+    monkeypatch.setattr(host, "_run", run)
+    assert host.mac_now_playing() == "Кино - Звезда по имени Солнце"
+    assert calls == ["pgrep", "pgrep", "osascript"]

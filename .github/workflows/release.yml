@@ -51,4 +51,54 @@ jobs:
           body: |
             **Скачать:** [KaiPet-Setup.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/KaiPet-Setup.exe) — установка за пару кликов, без прав администратора.
             Без установки — KaiPet-portable.zip: распакуйте и запустите KaiPet.exe.
+            **Mac (Apple M1 и новее):** KaiPet-macOS.dmg — откройте и перетащите Кая в «Программы».
             Сайт: https://shoxiazam.github.io/kai-pet/
+
+  macos:
+    # Выпуск создаёт сборка Windows; Mac добавляет к нему свой .dmg.
+    needs: windows
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -r requirements.txt pyinstaller pillow
+      - name: Version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i '' -E "s/__version__ = \"[^\"]*\"/__version__ = \"$VERSION\"/" kai_pet/__init__.py
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Build KaiPet.app
+        run: python build_exe.py
+      - name: Menu-bar app, version, camera note, ad-hoc signature
+        run: |
+          PLIST=dist/KaiPet.app/Contents/Info.plist
+          plutil -replace LSUIElement -bool true "$PLIST"                     # без значка в Dock — Кай живёт у часов
+          plutil -replace CFBundleDisplayName -string "Кай" "$PLIST"
+          plutil -replace CFBundleShortVersionString -string "$VERSION" "$PLIST"
+          plutil -replace CFBundleVersion -string "$VERSION" "$PLIST"
+          plutil -replace NSCameraUsageDescription -string "Кай-сторож фотографирует, кто трогает Mac, пока вас нет." "$PLIST"
+          plutil -replace NSAppleEventsUsageDescription -string "Кай танцует под то, что играет в Spotify и «Музыке»." "$PLIST"
+          codesign --force --deep --sign - dist/KaiPet.app                      # после правки Info.plist подпись заново
+          codesign --verify --deep --strict dist/KaiPet.app
+      - name: Smoke test (Kai starts and draws a new look by himself)
+        run: |
+          KAI_LOOK='{"kind":"fox","color":"ginger","acc":["bow"]}' KAI_OUT="$RUNNER_TEMP/look" \
+            dist/KaiPet.app/Contents/MacOS/KaiPet --export
+          test -d "$RUNNER_TEMP/look/frames/holdR"
+          QT_QPA_PLATFORM=offscreen KAI_PET_STATE="$RUNNER_TEMP/state.json" dist/KaiPet.app/Contents/MacOS/KaiPet &
+          PID=$!
+          sleep 12
+          kill -0 "$PID"                                                        # не упал за 12 секунд
+          kill "$PID"
+      - name: KaiPet-macOS.dmg
+        run: |
+          mkdir dmg
+          cp -R dist/KaiPet.app dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "Кай" -srcfolder dmg -ov -format UDZO dist/KaiPet-macOS.dmg
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/KaiPet-macOS.dmg

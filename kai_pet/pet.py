@@ -41,8 +41,10 @@ from PySide6.QtWidgets import QInputDialog, QMenu, QWidget
 from . import commands, guard, sounds
 from .bubble import Bubble
 from .config import Config
+from .host import MAC, data_dir, keep_visible, mac_idle_s, mac_now_playing
 from .friend import FRIENDS, Friends
 from .games import GAMES, Games
+from .wardrobe import Wardrobe
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +52,7 @@ FROZEN = bool(getattr(sys, "frozen", False))
 ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
 ASSETS = ROOT / "assets"                     # кадры: python -m kai_pet.export (или node character/export.mjs)
 # В KaiPet.exe папка с кадрами только для чтения — новые образы Кай рисует в профиль пользователя.
-LOOKS_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "KaiPet" / "looks" if FROZEN else None
+LOOKS_DIR = data_dir() / "looks" if FROZEN else None
 FPS = {"moods": 12}     # живые эмоции дышат медленнее, остальное 24 к/с
 CACHE_MAX = 10          # наборов кадров в памяти; одна эмоция ≈ 3 МБ
 TIRED_EVERY_S, TIRED_FOR_S = 15 * 60, 20   # после долгой работы: раз в 15 минут устаёт на 20 секунд
@@ -221,6 +223,8 @@ def save_state(key: str, value) -> None:
 # --- что видно о пользователе (только Windows; на других системах эти сигналы просто молчат) ---
 def input_idle_s() -> float:
     """Сколько секунд не было мыши и клавиатуры (сами клавиши не видны)."""
+    if MAC:
+        return mac_idle_s()
     if sys.platform != "win32":
         return 0.0
 
@@ -680,11 +684,10 @@ def perch_on(rect, ratio: float, size: int, area: QRect) -> tuple[int, int] | No
 
 
 def accessories_dir() -> Path:
-    """Папка своих вещей: KAI_ACCESSORIES или %LOCALAPPDATA%/KaiPet/accessories (~/.kai-pet/accessories)."""
+    """Папка своих вещей: KAI_ACCESSORIES или <папка данных Кая>/accessories (на Windows — %LOCALAPPDATA%/KaiPet)."""
     if os.environ.get("KAI_ACCESSORIES"):
         return Path(os.environ["KAI_ACCESSORIES"])
-    base = os.environ.get("LOCALAPPDATA")
-    return Path(base) / "KaiPet" / "accessories" if base else Path.home() / ".kai-pet" / "accessories"
+    return data_dir() / "accessories"
 
 
 def guess_slot(name: str, file: Path | None = None) -> str:
@@ -1032,6 +1035,7 @@ class Pet(QWidget):
                          | Qt.WindowDoesNotAcceptFocus)
         if not (assets / "frames" / "idle").is_dir():
             raise FileNotFoundError(f"нет кадров Кая в {assets} — запустите node character/export.mjs")
+        keep_visible(self)                         # на Mac не исчезать при переключении программ
         self.dir, self.cfg = assets, cfg or Config()
         self.base = assets                         # кадры обычного Кая; новые образы — в looks/<id>
         self._export: QProcess | None = None
@@ -1095,6 +1099,7 @@ class Pet(QWidget):
         self.flash: tuple[str, float] | None = None          # эмоция ненадолго: (имя, до какого момента)
         self.bubble = Bubble()
         self.partner_anim: str | None = None                  # что Кай делает вместе с другом (friend.Friends)
+        self._mac_track, self._mac_asking = "", False         # Mac: что играет в Spotify / «Музыке»
         self.shown = ""
         self.music = False
         self._peaks: collections.deque = collections.deque(maxlen=MUSIC_SAMPLES)
@@ -1132,6 +1137,7 @@ class Pet(QWidget):
         self.games = Games(self)                  # прятки, догонялки, камень-ножницы-бумага
         self.guard = guard.Guard(self)            # сторож: кто-то трогает ноутбук, пока вас нет
         self.friends = Friends(self)              # второй питомец рядом с Каем
+        self.wardrobe = Wardrobe(self)            # переодевается в шкафу, а не мгновенно
         wanted = self._effective()
         if wanted != self.look:
             QTimer.singleShot(0, lambda: self._wear(wanted, announce=False, greet=True))   # образ из прошлого раза
@@ -1144,6 +1150,7 @@ class Pet(QWidget):
         for timer in (self._timer, self._watch, self._perch, self._ear, self._weather_timer):
             timer.stop()
         self.games.stop()
+        self.wardrobe.close()
         self.guard.disarm(say=False)
         self.friends.shutdown()
         if self._export is not None:
@@ -1211,6 +1218,8 @@ class Pet(QWidget):
             return
         if greet:
             self._greet_season(look)
+        if announce and getattr(self, "wardrobe", None) is not None and self.wardrobe.can():
+            self.wardrobe.enter()               # забегает в шкаф — переодеваться не на глазах
         if (self.look_dir(look) / "frames" / NEWEST_ANIM).is_dir():   # без новых кадров — перерисовать
             self._apply_look(look, announce)
         else:
@@ -1234,8 +1243,12 @@ class Pet(QWidget):
         if self.dir != self.base:
             os.utime(self.dir)                  # свежий образ не удалится при уборке
         if announce:
-            self.play("wave")
-            self.speak(random.choice(DRESSED), 6000)
+            self.wardrobe.leave(self._show_off)  # из шкафа выходит уже в обновке (не в шкафу — сразу)
+
+    def _show_off(self) -> None:
+        self.play("wave")
+        self.speak(random.choice(DRESSED), 6000)
+        self._tell_friend("dressed")
 
     def _start_export(self, look: dict, announce: bool) -> None:
         """Кадры нового образа рисуются в фоне (≈20 с): kai_pet.export с KAI_LOOK и KAI_OUT через Edge/Chrome."""
@@ -1298,7 +1311,7 @@ class Pet(QWidget):
             shutil.rmtree(tmp, ignore_errors=True)
             err = bytes(proc.readAllStandardError()).decode(errors="replace")[-300:] if proc else ""
             log.warning("Кай не переоделся (код %s): %s", code, err)
-            self.speak("Не получилось переодеться. Попробую в другой раз.", 6000)
+            self.wardrobe.leave(lambda: self.speak("Не получилось переодеться. Попробую в другой раз.", 6000))
         pending, self._pending_look = self._pending_look, None
         if pending is not None:
             self._wear(pending, announce)
@@ -1390,6 +1403,13 @@ class Pet(QWidget):
     def _listen(self) -> None:
         if not self.dance_on:
             self.music = False
+            return
+        if MAC:                                 # громкость системы на Mac не читается — что играет, говорит плеер
+            self.music = bool(self._mac_track)
+            if self.music and time.monotonic() - self._style_at > STYLE_EVERY_S:
+                self._style_at = time.monotonic()
+                self.music_mood = music_mood([], self._mac_track)
+                self.dance_style = dance_for(self.music_mood, self.dance_style)
             return
         level = audio_peak()
         self._peaks.append(level)
@@ -1587,6 +1607,15 @@ class Pet(QWidget):
             self.app = None
         self._care(now, idle, process)
         self._cute(now, idle)
+        if MAC and self.dance_on and not self._mac_asking:     # Spotify / «Музыка» — в фоне, не тормозя Кая
+            self._mac_asking = True
+
+            def ask() -> None:
+                try:
+                    self._mac_track = mac_now_playing() or ""
+                finally:
+                    self._mac_asking = False
+            threading.Thread(target=ask, daemon=True).start()
         if datetime.date.today() != self._today:  # наступил новый день: зима, день рождения, счётчик дней
             self._today = datetime.date.today()
             self._mark_day()
@@ -1691,7 +1720,7 @@ class Pet(QWidget):
 
     def _maybe_chase(self) -> None:
         """Мышкой трясут рядом с Каем — он охотится: подбегает к курсору и прыгает."""
-        if not self.chase_on or self.once or self.loop != "idle" or self._press or self.games.active:
+        if not self.chase_on or self.once or self.loop != "idle" or self._press or self.games.active or self.wardrobe.busy:
             return
         now, c = time.monotonic(), self._cursor()
         self._trail.append((now, c.x()))
@@ -2057,7 +2086,7 @@ class Pet(QWidget):
 
     def _follow_window(self) -> None:
         """Режим «на окне»: Кай сидит на верхней кромке окна впереди и ездит вместе с ним."""
-        if self._press or self.games.active:
+        if self._press or self.games.active or self.wardrobe.busy:
             return
         if self._pin:
             self._follow_pin()

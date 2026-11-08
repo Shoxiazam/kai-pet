@@ -69,6 +69,8 @@ class FriendPet(QWidget):
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setFixedSize(size, size)
         self.setMouseTracking(True)                # поглаживание — движение мыши без нажатия
+        from .host import keep_visible
+        keep_visible(self)
         self.dir, self.size_px, self.ctl = folder, size, ctl
         self.cache: dict[str, list[QPixmap]] = {}
         self.anim, self.once, self.frame, self.repeat = "idle", None, 0, 0
@@ -264,6 +266,22 @@ class Friends(QObject):
         if guard is not None:
             guard.alarm.connect(lambda _photo: self.kai_event("alarm"))
 
+    # --- свой голос друга: тот же «мяу-говорок», но выше или ниже (assets/sounds/friends/<кто>/) ---
+    def _sound(self, name: str) -> None:
+        if not self.pet.sounds_on:
+            return
+        from . import sounds
+        own = self.pet.base / "sounds" / "friends" / self.who / f"{name}.wav"
+        sounds.play(own if own.is_file() else self.pet.base / "sounds" / f"{name}.wav")
+
+    def _say(self, text: str, hide_after_ms: int = 4000) -> None:
+        """Реплика друга облачком и его голосом (как speak у Кая, но звук свой)."""
+        if self.widget is None:
+            return
+        self.widget.bubble.say(text, hide_after_ms)
+        if text.strip() and self.widget.isVisible():
+            self._sound("chirp1" if len(text) < 25 else "chirp2" if len(text) < 60 else "chirp3")
+
     def _later(self, ms: int, fn) -> None:
         """Отложить, но с привязкой к себе: Кая закрыли — таймер умирает вместе с ним."""
         QTimer.singleShot(ms, self, fn)
@@ -306,7 +324,7 @@ class Friends(QObject):
         if not self.here:
             return
         if say:
-            self.widget.bubble.say(BYE, 3000)
+            self._say(BYE, 3000)
             self.widget.play("bye")
         w, self.widget = self.widget, None
         self._timer.stop()
@@ -373,7 +391,7 @@ class Friends(QObject):
         self.widget.show()
         self.widget.play("wave", 2)
         if greet:
-            self.widget.bubble.say(random.choice(HELLO).format(name=self.name), 6000)
+            self._say(random.choice(HELLO).format(name=self.name), 6000)
             self._later(2500, lambda: self.pet.play("wave"))
         self._timer.start(1000 // 24)
         self._follow.start(200)
@@ -456,8 +474,8 @@ class Friends(QObject):
         if self.widget is None:
             return
         self.widget.play(random.choice(["wave", "jump", "heart"]))
-        self.widget.bubble.say(random.choice(CLICK), 4000)
-        self.pet._sound("meow")
+        self._say(random.choice(CLICK), 4000)
+        self._sound("meow")
 
     def petted(self) -> None:
         """Гладят друга: мурлычет. Кай иногда ревнует."""
@@ -465,7 +483,7 @@ class Friends(QObject):
         if w is None or w.once == "purr":
             return
         w.play("purr", 2)
-        self.pet._sound("purr")
+        self._sound("purr")
         now = time.monotonic()
         if now - self._jealous_at > JEALOUS_EVERY_S and random.random() < JEALOUS_CHANCE and not self.pet.once:
             self._jealous_at = now
@@ -484,13 +502,13 @@ class Friends(QObject):
         fed = load_state().get("buddy_fed")
         fed = fed if isinstance(fed, dict) else {}
         if fed.get(self.who) == today:
-            self.widget.bubble.say("Спасибо, больше не влезет! Давай завтра.", 4000)
+            self._say("Спасибо, больше не влезет! Давай завтра.", 4000)
             return
         fed[self.who] = today
         save_state("buddy_fed", fed)
         self.widget.play("eat")
-        self.pet._sound("munch")
-        self.widget.bubble.say("Ням! Спасибо!", 4000)
+        self._sound("munch")
+        self._say("Ням! Спасибо!", 4000)
         self._later(2200, lambda: self.pet.speak(f"{self.name}, оставь и мне кусочек!", 4000))
 
     def dropped(self, pos: QPoint) -> None:
@@ -539,23 +557,26 @@ class Friends(QObject):
                 w.play("clap")
         elif event == "fed":
             w.flash = ("curious", time.monotonic() + 3)
-            w.bubble.say(random.choice(("А мне печеньку?", "Вкусно пахнет!", "Поделишься?")), 4000)
+            self._say(random.choice(("А мне печеньку?", "Вкусно пахнет!", "Поделишься?")), 4000)
         elif event == "done":
             w.play("clap")
         elif event == "failed":
             w.play("hug")
-            w.bubble.say(random.choice(("Не грусти, Кай!", "Ничего, в следующий раз получится!")), 4000)
+            self._say(random.choice(("Не грусти, Кай!", "Ничего, в следующий раз получится!")), 4000)
         elif event == "hunt":
             self._later(250, lambda: self.widget and self.widget.play("jump", 2))
         elif event == "hunt_friend":
             if not self.pet.once and self.pet.loop == "idle":
                 self._later(250, lambda: self.pet.play("jump"))
+        elif event == "dressed":                           # Кай вышел из шкафа в обновке
+            w.play(random.choice(("clap", "heart")))
+            self._say(random.choice(("Тебе идёт!", "Красавчик!", "Ого, какой модный!", "Мне нравится!")), 3500)
         elif event == "found":
             w.play("clap", 2)
-            w.bubble.say("Ура, нашёлся!", 3000)
+            self._say("Ура, нашёлся!", 3000)
         elif event == "alarm":
             w.flash = ("surprised", time.monotonic() + 6)
-            w.bubble.say("Чужой! Кай, зови хозяина!", 6000)
+            self._say("Чужой! Кай, зови хозяина!", 6000)
         elif event.startswith("gesture:"):               # Каю сказали — делают оба
             name = event[8:]
             if name in ("highL", "highR"):               # Кай дал пять — друг отвечает навстречу
@@ -620,7 +641,7 @@ class Friends(QObject):
         self.duet = "hold" if first else random.choice(choices)       # сначала берутся за лапки
         self._duet_until = now + random.uniform(*DUET_PHASE_S)
         if first:
-            w.bubble.say(random.choice(("Пошли танцевать!", "Ура, музыка!", "Берись за лапку!")), 3000)
+            self._say(random.choice(("Пошли танцевать!", "Ура, музыка!", "Берись за лапку!")), 3000)
         self._duet_step(self.duet)
 
     def _duet_step(self, step: str) -> None:
@@ -670,12 +691,12 @@ class Friends(QObject):
             k_anim, f_anim, line = random.choice(talks.PLAYS)
             pet.play(k_anim, 2)
             w.play(f_anim, 2)
-            w.bubble.say(line, 3000)
+            self._say(line, 3000)
             return
         if kind == "solo":
             text, anim = random.choice(talks.SOLO[self.who])
             w.play(anim)
-            w.bubble.say(text, 4500)
+            self._say(text, 4500)
             return
         if kind == "chase":                       # друг обегает Кая: на другую сторону и обратно
             self.run_around()
@@ -706,7 +727,7 @@ class Friends(QObject):
         g, k = pet.geometry(), pet.size_px
         other = QPoint(g.right() - 18 if self.side == "left" else g.left() - w.width() + 18, w.y())
         back = QPoint(w.pos())
-        w.bubble.say(random.choice(("Догоняй!", "Не поймаешь!", "Я тут!")), 2500)
+        self._say(random.choice(("Догоняй!", "Не поймаешь!", "Я тут!")), 2500)
         pet.play("jump")
         self.walk_to(other, lambda: self._later(600, lambda: self.widget and self.walk_to(back)))
 
@@ -733,7 +754,7 @@ class Friends(QObject):
         else:
             if anim:
                 self.widget.play(anim)
-            self.widget.bubble.say(text, LINE_MS)
+            self._say(text, LINE_MS)
         self._later(LINE_MS + random.randint(-300, 700), self._say_next)   # живой темп, а не метроном
 
     def command(self, text: str) -> bool:
