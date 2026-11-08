@@ -1021,6 +1021,23 @@ def exporter() -> tuple[str, list[str]] | None:
     return export.command() if export.find_browser() else None
 
 
+def close_kai_windows() -> None:
+    """Все окна Кая — друзей, их облачка, шкаф, ушки из пряток — закрыть сейчас, а не по таймеру.
+
+    Окно, переживший QApplication, роняет процесс на выходе (0xC0000409). Чужие окна (агента) не трогаем.
+    """
+    from .friend import FriendPet
+    from .games import Ears
+    from .wardrobe import Closet
+    app = QCoreApplication.instance()
+    if app is None or not hasattr(app, "topLevelWidgets"):
+        return
+    for w in app.topLevelWidgets():
+        if isinstance(w, (Bubble, FriendPet, Ears, Closet)):
+            w.hide()
+            w.deleteLater()
+
+
 def friend_level(points: int) -> int:
     return sum(points >= x for x in FRIEND_LEVELS)
 
@@ -1165,6 +1182,7 @@ class Pet(QWidget):
         _sessions[0] = None
         self.bubble.deleteLater()
         self.deleteLater()
+        close_kai_windows()                    # и окна, чьё закрытие ещё ждало таймера (друг ушёл домой, шкаф…)
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 
     # --- гардероб: вид, цвет, аксессуары, сезонные вещи ---

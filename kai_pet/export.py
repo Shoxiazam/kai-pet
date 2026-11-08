@@ -141,7 +141,19 @@ def _page_ws(port: int) -> str:
     raise RuntimeError("Браузер не ответил по DevTools")
 
 
-def export(look: dict, out: Path, custom: dict | None = None) -> None:
+def export(look: dict, out: Path, custom: dict | None = None, attempts: int = 2) -> None:
+    """Нарисовать все кадры образа. Браузер изредка рвёт соединение посреди работы — тогда ещё раз с новым."""
+    for left in range(attempts, 0, -1):
+        try:
+            _export_once(look, out, custom)
+            return
+        except (ConnectionError, OSError, RuntimeError):
+            if left == 1:
+                raise
+            time.sleep(1)
+
+
+def _export_once(look: dict, out: Path, custom: dict | None) -> None:
     exe = find_browser()
     if not exe:
         raise RuntimeError("Не найден Edge или Chrome")

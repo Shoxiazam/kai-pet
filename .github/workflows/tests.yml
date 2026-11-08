@@ -26,10 +26,11 @@ jobs:
       - name: Character self-check
         run: node character/test.mjs
       - name: Tests
-        shell: pwsh
+        # bash, а не pwsh: в pwsh GitHub считает ошибкой любую строку в stderr (например, предупреждение Qt)
+        shell: bash
         run: |
-          python -m pytest -q -rf --tb=short -o faulthandler_timeout=60 2>&1 | Tee-Object -FilePath pytest.log
-          exit $LASTEXITCODE
+          python -m pytest -q -rf --tb=short -o faulthandler_timeout=60 2>&1 | tee pytest.log
+          exit "${PIPESTATUS[0]}"
       - name: Show failures as annotations
         if: failure()
         shell: pwsh

@@ -38,6 +38,7 @@ def pet(monkeypatch, tmp_path, played):
     QApplication.instance() or QApplication([])
     monkeypatch.setenv("KAI_PET_STATE", str(tmp_path / "state.json"))   # память — своя у каждого теста
     monkeypatch.setenv("KAI_ACCESSORIES", str(tmp_path / "acc"))           # и папка своих вещей
+    monkeypatch.setattr(pet_module, "MAC", False)     # музыку тесты дают громкостью, как на Windows (Mac — свои тесты)
     monkeypatch.setattr(pet_module, "active_window", lambda: ("", "explorer.exe"))
     monkeypatch.setattr(pet_module, "active_window_rect", lambda: None)
     monkeypatch.setattr(pet_module, "input_idle_s", lambda: 0.0)
@@ -200,7 +201,8 @@ def test_tray_builds(pet):
     from kai_pet.__main__ import tray
     icon = tray(QApplication.instance(), pet)
     titles = [a.text() for a in icon.contextMenu().actions()]
-    assert "Запускать вместе с Windows" in titles and "Выход" in titles
+    start = "Запускать вместе с Windows" if sys.platform == "win32" else "Запускать при входе в систему"
+    assert start in titles and "Выход" in titles
     icon.hide()
 
 
@@ -295,7 +297,11 @@ def test_node_that_fails_to_start_does_not_hang_kai(pet, monkeypatch, tmp_path):
     monkeypatch.setattr(pet, "looks_root", lambda: tmp_path / "looks")
     monkeypatch.setattr(pet_module, "exporter", lambda: (str(tmp_path / "нет-такого.exe"), []))
     pet._start_export(pet_module.normalize_look({"acc": ["scarf"]}), announce=False)
-    QApplication.processEvents()
+    for _ in range(50):                                          # macOS сообщает о незапуске не сразу
+        QApplication.processEvents()
+        if pet._export is None:
+            break
+        time.sleep(0.05)
     assert pet._export is None                                   # не «переодевается» вечно
     assert "Не получилось переодеться" in pet.bubble.text.text()
 
