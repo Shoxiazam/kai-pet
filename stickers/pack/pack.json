@@ -1,0 +1,94 @@
+{
+ "title": "Кай",
+ "look": {
+  "kind": "cat",
+  "color": "gray",
+  "acc": []
+ },
+ "stickers": [
+  {
+   "file": "hello.webm",
+   "emoji": "👋"
+  },
+  {
+   "file": "love.webm",
+   "emoji": "❤️"
+  },
+  {
+   "file": "like.webm",
+   "emoji": "👍"
+  },
+  {
+   "file": "yay.webm",
+   "emoji": "🎉"
+  },
+  {
+   "file": "dance.webm",
+   "emoji": "💃"
+  },
+  {
+   "file": "laugh.webm",
+   "emoji": "😂"
+  },
+  {
+   "file": "think.webm",
+   "emoji": "🤔"
+  },
+  {
+   "file": "shy.webm",
+   "emoji": "😊"
+  },
+  {
+   "file": "spin.webm",
+   "emoji": "🌀"
+  },
+  {
+   "file": "clap.webm",
+   "emoji": "👏"
+  },
+  {
+   "file": "hug.webm",
+   "emoji": "🤗"
+  },
+  {
+   "file": "bow.webm",
+   "emoji": "🙇"
+  },
+  {
+   "file": "sad.webm",
+   "emoji": "😢"
+  },
+  {
+   "file": "sleep.webm",
+   "emoji": "😴"
+  },
+  {
+   "file": "yum.webm",
+   "emoji": "🍪"
+  },
+  {
+   "file": "sign_hi.webm",
+   "emoji": "🙋"
+  },
+  {
+   "file": "sign_thanks.webm",
+   "emoji": "🙏"
+  },
+  {
+   "file": "sign_ok.webm",
+   "emoji": "👌"
+  },
+  {
+   "file": "disco.webm",
+   "emoji": "🕺"
+  },
+  {
+   "file": "guitar.webm",
+   "emoji": "🎸"
+  },
+  {
+   "file": "duo.webm",
+   "emoji": "🤝"
+  }
+ ]
+}

@@ -132,6 +132,14 @@
                  border: 1px solid var(--line); border-radius: var(--r); }
   figcaption { font-size: 14px; color: var(--muted); margin-top: 8px; }
 
+  .stickers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .st { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 10px 8px;
+        text-align: center; transition: transform .2s var(--ease-out); }
+  .st:hover { transform: translateY(-3px) rotate(-1.5deg); }
+  .st video { width: 100%; aspect-ratio: 1; display: block; }
+  .st figcaption { margin-top: 2px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; margin-top: 22px; }
+  .net { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
   .faq { display: grid; gap: 10px; }
   details { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; transition: border-color .2s var(--ease-out); }
   details[open] { border-color: var(--acc); }
@@ -154,14 +162,16 @@
           transition-delay: calc(var(--i, 0) * 70ms); }
   .rise.in { opacity: 1; transform: none; }
   .no-js .rise { opacity: 1; transform: none; }
-  body:not(.is-mac) .only-mac, .is-mac .only-win { display: none; }   /* своё для Mac и для Windows */
+  body:not(.is-mac) .only-mac, .is-mac .only-win { display: none; }
+  [hidden] { display: none !important; }   /* своё для Mac и для Windows */
 
   @media (max-width: 860px) {
     .hero, .duo { grid-template-columns: 1fr; }
     .stage { max-width: 300px; order: -1; }
     .sprite { --w: 180px; --h: 180px; }
     .duo .sprite { --w: 290px; --h: 199px; }
-    .steps, .gallery { grid-template-columns: 1fr; }
+    .steps, .gallery, .net { grid-template-columns: 1fr; }
+    .stickers { grid-template-columns: repeat(2, 1fr); }
     .features { grid-template-columns: 1fr 1fr; }
     .f, .f.wide { grid-column: span 1; }
     .nav a:not(.gh) { display: none; }
@@ -275,6 +285,37 @@
       </div>
     </section>
 
+    <section id="network" aria-labelledby="t-net">
+      <p class="eyebrow">Сеть Каев</p>
+      <h2 id="t-net">Кай ходит в гости к Каю друга</h2>
+      <p class="sub measure">Обменяйтесь кодами дружбы — и ваши Каи смогут навещать друг друга через интернет.</p>
+      <div class="net">
+        <div class="step rise" style="--i:0"><h3>Код дружбы</h3><p>Правый клик по Каю → «Друзья по сети» → «Мой код». Отправьте его другу, он добавит вас по коду.</p></div>
+        <div class="step rise" style="--i:1"><h3>В гости</h3><p>Ваш Кай берёт табличку «В гостях у…», а у друга на экране появляется гость в вашем наряде: здороваются, танцуют, болтают.</p></div>
+        <div class="step rise" style="--i:2"><h3>Открытки</h3><p>«С днём рождения!», «Скучаю» — Кай друга поднимет табличку с вашим текстом и сердечком.</p></div>
+      </div>
+    </section>
+
+    <section id="stickers" aria-labelledby="t-st">
+      <p class="eyebrow">Стикеры</p>
+      <h2 id="t-st">Кай в Telegram</h2>
+      <p class="sub measure">21 живой стикер: машет, обнимает, смеётся, держит таблички и держит Миру за лапку.</p>
+      <div class="stickers">
+        <figure class="st rise" style="--i:0"><video src="stickers/hello.webm" autoplay loop muted playsinline aria-label="Стикер: Привет"></video><figcaption>Привет</figcaption></figure>
+        <figure class="st rise" style="--i:1"><video src="stickers/love.webm" autoplay loop muted playsinline aria-label="Стикер: Сердечко"></video><figcaption>Сердечко</figcaption></figure>
+        <figure class="st rise" style="--i:2"><video src="stickers/yay.webm" autoplay loop muted playsinline aria-label="Стикер: Ура"></video><figcaption>Ура</figcaption></figure>
+        <figure class="st rise" style="--i:3"><video src="stickers/dance.webm" autoplay loop muted playsinline aria-label="Стикер: Танец"></video><figcaption>Танец</figcaption></figure>
+        <figure class="st rise" style="--i:4"><video src="stickers/laugh.webm" autoplay loop muted playsinline aria-label="Стикер: Смех"></video><figcaption>Смех</figcaption></figure>
+        <figure class="st rise" style="--i:5"><video src="stickers/duo.webm" autoplay loop muted playsinline aria-label="Стикер: За лапки"></video><figcaption>За лапки</figcaption></figure>
+        <figure class="st rise" style="--i:6"><video src="stickers/sign_thanks.webm" autoplay loop muted playsinline aria-label="Стикер: Спасибо"></video><figcaption>Спасибо</figcaption></figure>
+        <figure class="st rise" style="--i:7"><video src="stickers/spin.webm" autoplay loop muted playsinline aria-label="Стикер: Кружится"></video><figcaption>Кружится</figcaption></figure>
+      </div>
+      <div class="row">
+        <a class="btn" id="tg" hidden href="#"><span aria-hidden="true">✈️</span> Добавить в Telegram</a>
+        <a class="ghost" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-stickers.zip">Скачать набор (.webm)</a>
+      </div>
+    </section>
+
     <section aria-labelledby="t-looks">
       <p class="eyebrow">Внешность</p>
       <h2 id="t-looks">Какой Кай будет у вас?</h2>
@@ -292,7 +333,8 @@
       <div class="faq measure" style="max-width:760px">
         <details class="rise" style="--i:0"><summary>Это бесплатно? Есть реклама?</summary><p>Бесплатно и без рекламы. Код открыт, лицензия MIT.</p></details>
         <details class="rise" style="--i:1"><summary>Как обновлять?</summary><p>Никак — Кай раз в день сам проверяет новую версию и предлагает обновиться в один клик. Проверить вручную: значок Кая у часов → «Проверить обновления».</p></details>
-        <details class="rise" style="--i:2"><summary>Нужен ли интернет?</summary><p>Только для погоды и обновлений. Всё остальное работает на вашем компьютере и никуда не отправляется.</p></details>
+        <details class="rise" style="--i:2"><summary>Нужен ли интернет?</summary><p>Только для погоды, обновлений и сети Каев. Всё остальное работает на вашем компьютере и никуда не отправляется.</p></details>
+        <details class="rise" style="--i:2"><summary>Что уходит в интернет в сети Каев?</summary><p>Только то, что нужно для визита: имя, которое вы сами указали, наряд Кая и текст открытки. Сообщения идут через бесплатный сервис ntfy.sh по вашему длинному коду дружбы. Сеть выключена, пока вы сами не добавите друга; гостей и открытки принимает только от друзей, а чужой запрос дружбы Кай сначала покажет вам.</p></details>
         <details class="rise" style="--i:3"><summary>Не будет ли тормозить компьютер?</summary><p>Кай лёгкий: обычно 1–2 % процессора. Спрятать его можно значком у часов.</p></details>
         <details class="rise" style="--i:4"><summary>Как удалить?</summary><p>Параметры Windows → Приложения → «Кай» → Удалить.</p></details>
         <details class="rise" style="--i:5"><summary>Есть версия для Mac?</summary><p>Да, для Mac на Apple M1 и новее — KaiPet-macOS.dmg. На Mac Кай танцует под Spotify и «Музыку» (громкость других программ macOS не показывает), а в прятках прячется за краем экрана. На Linux Кая можно запустить из исходников.</p></details>
@@ -340,6 +382,13 @@
                                : 'Скачивание началось — откройте KaiPet-Setup.exe, когда загрузится.';
     setTimeout(() => b.removeAttribute('aria-busy'), 1500);
   }));
+
+  // Набор в Telegram: адрес появляется в stickers/telegram.json, когда набор создан ботом.
+  fetch('stickers/telegram.json').then(r => r.ok ? r.json() : null).then(c => {
+    if (c && /^https:\/\/t\.me\/addstickers\/\w+$/.test(c.telegram || '')) {
+      const tg = document.getElementById('tg'); tg.href = c.telegram; tg.hidden = false;
+    }
+  }).catch(() => {});
 
   // Версия и размер последнего выпуска. Если выпуска с установщиком ещё нет — ведём на страницу всех версий.
   fetch('https://api.github.com/repos/Shoxiazam/kai-pet/releases/latest')

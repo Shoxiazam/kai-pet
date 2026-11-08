@@ -11,3 +11,5 @@ dist/
 build/
 *.spec
 assets/friend/
+stickers/bot_token.txt
+stickers/pack_link.txt

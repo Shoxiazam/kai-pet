@@ -44,6 +44,7 @@ from .config import Config
 from .host import MAC, data_dir, keep_visible, mac_idle_s, mac_now_playing
 from .friend import FRIENDS, Friends
 from .games import GAMES, Games
+from .network import Network
 from .wardrobe import Wardrobe
 
 log = logging.getLogger(__name__)
@@ -1155,6 +1156,7 @@ class Pet(QWidget):
         self.guard = guard.Guard(self)            # сторож: кто-то трогает ноутбук, пока вас нет
         self.friends = Friends(self)              # второй питомец рядом с Каем
         self.wardrobe = Wardrobe(self)            # переодевается в шкафу, а не мгновенно
+        self.network = Network(self)              # сеть Каев: гости и открытки через интернет
         wanted = self._effective()
         if wanted != self.look:
             QTimer.singleShot(0, lambda: self._wear(wanted, announce=False, greet=True))   # образ из прошлого раза
@@ -1170,6 +1172,7 @@ class Pet(QWidget):
         self.wardrobe.close()
         self.guard.disarm(say=False)
         self.friends.shutdown()
+        self.network.shutdown()
         if self._export is not None:
             self._export.finished.disconnect()
             self._export.kill()
@@ -2175,6 +2178,7 @@ class Pet(QWidget):
         for name, title in GAMES.items():
             play.addAction(title).triggered.connect(lambda _c=False, n=name: self.games.start(n))
         play.setEnabled(not self.games.active)
+        self.network.fill_menu(menu.addMenu("Друзья по сети"))
         buddy = menu.addMenu("Друг Кая")
         for key, info in FRIENDS.items():
             action = buddy.addAction(f"{info['name']} — {info['about']}")

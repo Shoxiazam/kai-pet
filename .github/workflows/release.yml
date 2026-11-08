@@ -42,11 +42,15 @@ jobs:
       - name: Portable zip
         shell: pwsh
         run: Compress-Archive -Path dist\KaiPet\* -DestinationPath dist\KaiPet-portable.zip
+      - name: Stickers zip
+        shell: pwsh
+        run: Compress-Archive -Path stickers\pack\* -DestinationPath dist\KaiPet-stickers.zip
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/KaiPet-Setup.exe
             dist/KaiPet-portable.zip
+            dist/KaiPet-stickers.zip
           generate_release_notes: true
           body: |
             **Скачать:** [KaiPet-Setup.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/KaiPet-Setup.exe) — установка за пару кликов, без прав администратора.
