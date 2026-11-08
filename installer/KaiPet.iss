@@ -61,6 +61,12 @@ Name: "{autodesktop}\Кай"; Filename: "{app}\KaiPet.exe"; Tasks: desktopicon
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "KaiPet"; \
   ValueData: """{app}\KaiPet.exe"""; Flags: uninsdeletevalue; Tasks: autostart
 
+; ссылки kaipet:// из приглашений на сайте открывает Кай (удаление Кая их убирает)
+Root: HKCU; Subkey: "Software\Classes\kaipet"; ValueType: string; ValueName: ""; ValueData: "URL:Кай"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\kaipet"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\kaipet\shell\open\command"; ValueType: string; ValueName: ""; \
+  ValueData: """{app}\KaiPet.exe"" ""%1"""
+
 [Run]
 Filename: "{app}\KaiPet.exe"; Description: "{cm:RunKai}"; Flags: nowait postinstall
 

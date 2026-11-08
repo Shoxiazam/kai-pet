@@ -84,6 +84,7 @@ jobs:
           plutil -replace CFBundleShortVersionString -string "$VERSION" "$PLIST"
           plutil -replace CFBundleVersion -string "$VERSION" "$PLIST"
           plutil -replace NSCameraUsageDescription -string "Кай-сторож фотографирует, кто трогает Mac, пока вас нет." "$PLIST"
+          plutil -replace CFBundleURLTypes -json '[{"CFBundleURLName":"com.shoxiazam.kaipet","CFBundleURLSchemes":["kaipet"]}]' "$PLIST"   # ссылки из приглашений
           plutil -replace NSAppleEventsUsageDescription -string "Кай танцует под то, что играет в Spotify и «Музыке»." "$PLIST"
           codesign --force --deep --sign - dist/KaiPet.app                      # после правки Info.plist подпись заново
           codesign --verify --deep --strict dist/KaiPet.app

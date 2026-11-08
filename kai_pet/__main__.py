@@ -4,7 +4,7 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QEvent, QObject, QTimer
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
@@ -95,14 +95,73 @@ def updates(app: QApplication, pet: Pet) -> update.Updater:
     return up
 
 
+def link_arg() -> str:
+    """Ссылка kaipet://… из приглашения на сайте (браузер запускает KaiPet.exe с ней)."""
+    return next((a for a in sys.argv[1:] if a.lower().startswith("kaipet:")), "")
+
+
+def forward_link(url: str) -> bool:
+    """Кай уже запущен (сам или внутри голосового агента) — отдать ссылку ему, второго Кая не открывать."""
+    from PySide6.QtNetwork import QLocalSocket
+    from .network import link_server
+    sock = QLocalSocket()
+    sock.connectToServer(link_server())
+    if not sock.waitForConnected(1500):
+        return False
+    sock.write(url.encode("utf-8") + b"\n")
+    sock.flush()
+    sock.waitForBytesWritten(1500)
+    sock.waitForReadyRead(3000)                     # «ok» от Кая: ссылка дошла, теперь можно отключаться
+    sock.disconnectFromServer()
+    return True
+
+
+def register_links() -> None:
+    """Windows: ссылки kaipet:// открывает этот KaiPet.exe (HKCU, без прав администратора)."""
+    if sys.platform != "win32" or not FROZEN:
+        return
+    try:
+        import winreg
+        base = r"Software\Classes\kaipet"
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base) as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "URL:Кай")
+            winreg.SetValueEx(k, "URL Protocol", 0, winreg.REG_SZ, "")
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base + r"\shell\open\command") as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, f'"{sys.executable}" "%1"')
+    except OSError as e:
+        logging.warning("Ссылки kaipet:// не зарегистрированы: %s", e)
+
+
+class _MacLinks(QObject):
+    """macOS присылает ссылку kaipet:// событием FileOpen самому приложению."""
+
+    def __init__(self, pet: Pet):
+        super().__init__()
+        self.pet = pet
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.FileOpen and event.url().scheme() == "kaipet":
+            self.pet.network.handle_url(event.url().toString())
+            return True
+        return False
+
+
 def main() -> int:
     if "--export" in sys.argv:              # KaiPet.exe --export: нарисовать кадры образа и выйти (kai_pet.export)
         from .export import main as export_main
         return export_main()
     _logging()
+    url = link_arg()
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    if url and forward_link(url):           # ссылку принял уже работающий Кай
+        return 0
+    register_links()
     pet = Pet(config.load())
+    if url:
+        QTimer.singleShot(1500, lambda: pet.network.handle_url(url))
+    app._links = _MacLinks(pet)
+    app.installEventFilter(app._links)
     pet.quit_requested.connect(app.quit)
     pet.show()
     if update.installed():

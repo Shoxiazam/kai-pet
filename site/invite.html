@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Приглашение в сеть Каев</title>
+<meta name="description" content="Тебя зовут дружить Каями: скачай Кая и добавь друга одним нажатием.">
+<meta property="og:title" content="Тебя зовут дружить Каями 🐾">
+<meta property="og:description" content="Кай — живой питомец на рабочем столе. Ваши Каи будут ходить друг к другу в гости и носить письма.">
+<meta property="og:image" content="https://shoxiazam.github.io/kai-pet/img/duo-hold.png">
+<meta name="robots" content="noindex">
+<link rel="icon" href="img/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@800;900&family=Onest:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Тот же стиль, что у главной: бумага, коричневые чернила, терракота Кая, мята друзей. */
+  :root { --bg: #FBF6EE; --paper: #FFFDF9; --soft: #F4ECDF; --line: #E7DACA; --muted: #6E625B; --ink: #3B3330;
+          --acc: #B5532F; --acc-hover: #9E4627; --acc-ink: #fff; --acc-soft: #F6DED2; --mint: #2E8C6E; --mint-soft: #DDF1E8;
+          --ease-out: cubic-bezier(.22, 1, .36, 1); --h: "Nunito", "Segoe UI", system-ui, sans-serif; --t: "Onest", "Segoe UI", system-ui, sans-serif; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1C1816; --paper: #26201D; --soft: #2F2825; --line: #43392F; --muted: #BDB0A6; --ink: #F2EBE4;
+            --acc: #F08A63; --acc-hover: #F6A07F; --acc-ink: #1C1816; --acc-soft: #4A2C21; --mint: #6FD3AE; --mint-soft: #1F3A31; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--ink);
+         font: 400 clamp(16px, 1vw + 12px, 18px)/1.6 var(--t); padding: 24px 16px; }
+  :focus-visible { outline: none; box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--acc); border-radius: 10px; }
+  body { grid-template-columns: minmax(0, 560px); justify-content: center; }
+  main { width: 100%; min-width: 0; max-width: 560px; background: var(--paper); border: 1px solid var(--line); border-radius: 28px;
+         padding: clamp(20px, 5vw, 40px); text-align: center; }
+  .sprite { --w: 290px; --h: 199px; --n: 24; width: var(--w); height: var(--h); margin: 0 auto 8px; background: url(img/duo-hold.png) no-repeat;
+            background-size: calc(var(--w) * var(--n)) var(--h); animation: frames 2s steps(var(--n)) infinite; max-width: 100%; }
+  @keyframes frames { to { background-position-x: calc(var(--w) * var(--n) * -1); } }
+  h1 { font: 900 clamp(26px, 5vw, 36px)/1.1 var(--h); margin: 0 0 10px; letter-spacing: -.01em; }
+  h1 em { font-style: normal; color: var(--acc); }
+  p { margin: 0 0 18px; color: var(--muted); }
+  ol { text-align: left; margin: 22px 0 0; padding: 0; list-style: none; counter-reset: s; display: grid; gap: 12px; }
+  li { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 12px; align-items: start; background: var(--soft); border-radius: 16px; padding: 14px; }
+  li::before { counter-increment: s; content: counter(s); display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px;
+               background: var(--acc-soft); color: var(--acc); font: 900 18px var(--h); }
+  li b { display: block; margin-bottom: 6px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; cursor: pointer; text-decoration: none;
+         background: var(--acc); color: var(--acc-ink); font: 800 17px var(--h); padding: 12px 20px; border-radius: 14px;
+         transition: transform .18s var(--ease-out), background-color .18s var(--ease-out); }
+  .btn:hover { background: var(--acc-hover); color: var(--acc-ink); transform: translateY(-2px); }
+  .btn:active { transform: scale(.97); transition-duration: .1s; }
+  .btn.mint { background: var(--mint); }
+  .code { display: flex; gap: 8px; margin-top: 10px; }
+  .code input { flex: 1; min-width: 0; font: 600 15px ui-monospace, Consolas, monospace; color: var(--ink); background: var(--paper);
+                border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+  .code button { border: 1px solid var(--line); background: var(--paper); color: var(--ink); border-radius: 12px; padding: 0 14px;
+                 font: 600 14px var(--t); cursor: pointer; transition: border-color .15s var(--ease-out); }
+  .code button:hover { border-color: var(--acc); }
+  .note { font-size: 14px; margin-top: 16px; }
+  .status { min-height: 1.4em; color: var(--mint); font-weight: 600; font-size: 14px; margin-top: 8px; }
+  .bad { color: var(--acc); }
+  .rise { animation: rise .55s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 70ms); }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
+  @media (max-width: 420px) { .sprite { --w: 250px; --h: 171px; } li { grid-template-columns: 1fr; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="sprite rise" aria-hidden="true"></div>
+  <h1 class="rise" style="--i:1" id="title">Тебя зовут дружить <em>Каями</em></h1>
+  <p class="rise" style="--i:2" id="lead">Кай — живой питомец на рабочем столе. Подружите своих Каев — они будут ходить друг
+    к другу в гости, танцевать вместе и носить письма.</p>
+  <ol>
+    <li class="rise" style="--i:3"><div><b>Поставь Кая</b>Если Кая ещё нет — скачай, это меньше минуты.<br>
+      <a class="btn" style="margin-top:10px" id="get" href="index.html#install">Скачать Кая</a></div></li>
+    <li class="rise" style="--i:4"><div><b>Добавь в друзья</b><span id="addtext">Нажми кнопку — Кай откроется и добавит друга сам.</span><br>
+      <a class="btn mint" style="margin-top:10px" id="add" href="#">Добавить в друзья</a>
+      <div class="code"><input id="code" readonly aria-label="Код дружбы"><button id="copy" type="button">Копировать</button></div>
+      <p class="note">Кнопка не сработала? Правый клик по Каю → «Друзья по сети» → «Добавить друга по коду…» и вставь код.</p></div></li>
+  </ol>
+  <p class="status" id="status" role="status" aria-live="polite"></p>
+</main>
+<script>
+  // Всё из адреса показывается только как текст: имя и код из чужой ссылки на страницу не вставляются как HTML.
+  const q = new URLSearchParams(location.search);
+  const code = (q.get('c') || '').trim();
+  const name = (q.get('n') || '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 24);
+  const token = (q.get('t') || '').replace(/[^\w-]/g, '').slice(0, 32);
+  const ok = /^KAI-[A-Za-z0-9_-]{8,32}$/i.test(code);
+  const status = document.getElementById('status');
+  if (name) {
+    const t = document.getElementById('title');
+    t.textContent = '';
+    t.append(name + ' зовёт тебя дружить ');
+    const em = document.createElement('em'); em.textContent = 'Каями'; t.append(em);
+  }
+  if (/Mac/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '')) {
+    document.getElementById('get').href = 'https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-macOS.dmg';
+  } else {
+    document.getElementById('get').href = 'https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-Setup.exe';
+  }
+  const add = document.getElementById('add');
+  if (ok) {
+    document.getElementById('code').value = code.toUpperCase().startsWith('KAI-') ? 'KAI-' + code.slice(4) : code;
+    add.href = 'kaipet://add?' + new URLSearchParams({ c: code, n: name, t: token }).toString();
+    add.addEventListener('click', () => {
+      status.textContent = 'Открываю Кая… Если ничего не произошло — Кай не установлен или не запущен: поставь его (шаг 1) и нажми ещё раз.';
+    });
+  } else {
+    add.hidden = true;
+    document.getElementById('addtext').textContent = 'В ссылке нет кода дружбы — попроси друга прислать приглашение ещё раз.';
+    document.getElementById('addtext').className = 'bad';
+    document.querySelector('.code').hidden = true;
+  }
+  document.getElementById('copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(document.getElementById('code').value); status.textContent = 'Код скопирован!'; }
+    catch (e) { document.getElementById('code').select(); status.textContent = 'Выдели код и скопируй (Ctrl+C).'; }
+  });
+</script>
+</body>
+</html>

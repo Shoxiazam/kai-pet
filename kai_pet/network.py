@@ -21,8 +21,11 @@ import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-from PySide6.QtCore import QObject, QPoint, QProcess, QProcessEnvironment, QTimer, Signal
+from PySide6.QtCore import QObject, QPoint, QProcess, QProcessEnvironment, QTimer, QUrl, QUrlQuery, Signal
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QInputDialog, QMenu, QMessageBox
+
+from . import mail
 
 if TYPE_CHECKING:
     from .pet import Pet
@@ -37,7 +40,16 @@ RATE_PER_MIN = 6               # от одного друга не больше 
 VISIT_S = (70, 110)            # сколько гость гостит
 AWAY_MAX_S = 240               # хозяйский Кай ждёт «вернулся» не дольше
 GUESTS_KEEP = 6
-TYPES = {"hello", "hello_ok", "visit", "visit_done", "card"}
+TYPES = {"hello", "hello_ok", "visit", "visit_done", "card", "msg"}
+SITE = "https://shoxiazam.github.io/kai-pet"
+INVITES_KEEP = 20
+LOCAL_SERVER = "kaipet-link"           # ссылки kaipet:// из браузера доходят до уже запущенного Кая
+
+
+def link_server() -> str:
+    """Имя, под которым Кай принимает ссылки; KAI_LINK_SERVER — своё (тестам, чтобы не трогать настоящего Кая)."""
+    import os
+    return os.environ.get("KAI_LINK_SERVER") or LOCAL_SERVER
 GUEST_LINES = [("g", "Привет! Я Кай от {who}. Пришёл в гости!", "wave"), ("k", "Ура, гости! Заходи!", "jump"),
                ("g", "У тебя тут уютно.", "curious"), ("k", "Давай потанцуем?", "playful"),
                ("g", "Давай!", "dance")]
@@ -148,14 +160,19 @@ class Transport:
 class GuestCtl(QObject):
     """Гость из сети: окно как у друга (FriendPet), но приходит ненадолго и говорит от имени хозяина."""
 
-    def __init__(self, net: "Network", folder: Path, who: str, sender: str):
+    def __init__(self, net: "Network", folder: Path, who: str, sender: str, letter: str = ""):
         super().__init__(net)
         from .friend import FriendPet, SCALE
-        self.net, self.pet, self.who, self.sender = net, net.pet, who, sender
+        self.net, self.pet, self.who, self.sender, self.letter = net, net.pet, who, sender, letter
+        self.reply = ""
         self.widget = FriendPet(folder, round(self.pet.size_px * SCALE), self)
         self._tick = QTimer(self)
         self._tick.timeout.connect(self._frame)
         self._lines = list(GUEST_LINES)
+        if letter:                                            # принёс письмо — говорит его первым и ждёт ответа
+            self._lines = [("g", "Привет! Я Кай от {who}. Принёс тебе письмо!", "wave"),
+                           ("g", "«" + letter.replace("{", "(").replace("}", ")") + "»", "heart"),
+                           ("k", "Сейчас ответим!", "think"), ("g", "Жду ответ — отнесу его домой.", "curious")]
 
     def start(self, stay_s: float) -> None:
         self.widget.move(self._spot())
@@ -199,6 +216,14 @@ class GuestCtl(QObject):
             self.pet.play("dance", 3)
             self.widget.play("dance", 3)
         QTimer.singleShot(3000 + random.randint(0, 600), self, self._say_next)
+
+    def take_reply(self, text: str) -> None:
+        """Хозяин ответил на письмо — гость говорит «Передам!» и уходит с ответом."""
+        self.reply = text
+        if self.widget is not None:
+            self.widget.play("like")
+            self.widget.bubble.say("Передам! Бегу домой.", 2500)
+        QTimer.singleShot(2600, self, self.leave)
 
     def leave(self) -> None:
         if self.widget is None:
@@ -245,7 +270,19 @@ class Network(QObject):
         self._export: QProcess | None = None
         self._recent: dict[str, collections.deque] = {}
         self._asking = False
+        self.windows: dict[str, mail.ChatWindow] = {}
         self.got.connect(self._handle)
+        self._links = QLocalServer(self)
+        self._links.newConnection.connect(self._link_connection)
+        name = link_server()
+        if not self._links.listen(name):
+            probe = QLocalSocket()
+            probe.connectToServer(name)
+            if probe.waitForConnected(300):                   # уже работает другой Кай — ссылки примет он
+                probe.disconnectFromServer()
+            else:                                             # остался от упавшего Кая — убрать и занять
+                QLocalServer.removeServer(name)
+                self._links.listen(name)
         st = self._state()
         if st.get("on") and st.get("id"):
             QTimer.singleShot(3000, self, self.start)
@@ -299,8 +336,17 @@ class Network(QObject):
         self.transport.stop()
         self._save(on=False)
 
+    @property
+    def guest_from(self) -> str | None:
+        return self.guest.sender if self.guest is not None and self.guest.widget is not None else None
+
     def shutdown(self) -> None:
         self.transport.stop()
+        self._links.close()
+        for w in self.windows.values():
+            w.close()
+            w.deleteLater()
+        self.windows.clear()
         if self._export is not None:
             self._export.kill()
             self._export = None
@@ -316,7 +362,7 @@ class Network(QObject):
             self.pet.speak("Не получилось достучаться до сети. Проверь интернет.", 5000)
         return ok
 
-    def add_friend(self, code: str) -> bool:
+    def add_friend(self, code: str, invite: str = "") -> bool:
         box = parse_code(code)
         if not box or box == self.my_id:
             self.pet.speak("Это не похоже на код дружбы. Он выглядит так: KAI-…", 5000)
@@ -328,16 +374,20 @@ class Network(QObject):
         pending = dict(pending) if isinstance(pending, dict) else {}
         pending[box] = int(time.time())
         self._save(pending=pending)
-        if self.send(box, "hello"):
+        extra = {"t": clean_text(invite, 32)} if invite else {}
+        if self.send(box, "hello", **extra):
             self.pet.speak("Отправил запрос дружбы! Как только друг ответит — сможем ходить в гости.", 7000)
             return True
         return False
 
-    def visit(self, box: str) -> None:
+    def visit(self, box: str, letter: str = "") -> None:
         name = self.friends.get(box)
         if not name or self.away:
             return
-        if self.send(box, "visit", look=self.pet.look):
+        letter = clean_text(letter, mail.LETTER_MAX)
+        if self.send(box, "visit", look=self.pet.look, **({"text": letter} if letter else {})):
+            if letter:
+                mail.add(self, box, True, letter, via_kai=True)
             self.away = name
             self._sign_before = self.pet.sign_text
             self.pet.play("bye")
@@ -352,17 +402,109 @@ class Network(QObject):
             self.pet.gesture("heart", 1)
             self.pet.speak(f"Открытку отправил: «{text}»", 5000)
 
-    def _back(self, name: str, quiet: bool = False) -> None:
+    def _back(self, name: str, quiet: bool = False, reply: str = "", box: str = "") -> None:
         if self.away != name:
             return
         self.away = None
         self.pet.sign_text = self._sign_before
         self.pet.update()
-        if not quiet:
+        for w in self.windows.values():
+            w.refresh()
+        if reply and box:
+            mail.add(self, box, False, reply, via_kai=True)
+            self.pet.play("heart")
+            self.pet._sound("meow")
+            self.pet.speak(f"Вернулся от {name}! Ответ: «{reply}»", 12000)
+        elif not quiet:
             self.pet.play("jump")
             self.pet.speak(f"Я вернулся от {name}! Мы танцевали — было весело.", 7000)
 
-    # --- приём ---
+    # --- письма ---
+    def send_msg(self, box: str, text: str) -> None:
+        text = clean_text(text, mail.LETTER_MAX)
+        if not text or box not in self.friends:
+            return
+        if self.guest_from == box:                            # у нас гостит его Кай — ответ унесёт он
+            mail.add(self, box, True, text, via_kai=True)
+            self.guest.take_reply(text)
+            return
+        if self.send(box, "msg", text=text):
+            mail.add(self, box, True, text)
+
+    def open_chat(self, box: str) -> None:
+        name = self.friends.get(box)
+        if not name:
+            return
+        w = self.windows.get(box)
+        if w is None:
+            w = mail.ChatWindow(self, box, name, lambda t, b=box: self.send_msg(b, t),
+                                lambda t, b=box: self._kai_letter(b, t))
+            self.windows[box] = w
+        w.show()
+        w.raise_()
+        w.activateWindow()
+
+    def _kai_letter(self, box: str, text: str) -> None:
+        self.visit(box, text)
+        w = self.windows.get(box)
+        if w is not None:
+            w.refresh()
+
+    # --- приглашения ссылкой ---
+    def invite_link(self) -> str:
+        """Ссылка на сайт: друг откроет — скачает Кая и одним нажатием добавит вас (без вопросов: в ней секрет)."""
+        token = secrets.token_urlsafe(9)
+        invites = [t for t in self._state().get("invites", []) if isinstance(t, str)][-(INVITES_KEEP - 1):] + [token]
+        self._save(invites=invites)
+        self.start()
+        q = urllib.parse.urlencode({"c": self.code, "n": self.my_name(ask=False) or "друг", "t": token})
+        return f"{SITE}/invite.html?{q}"
+
+    def copy_invite(self) -> None:
+        if not self.my_name():
+            return
+        QApplication.clipboard().setText(self.invite_link())
+        self.pet.speak("Ссылка-приглашение скопирована! Отправь её другу — по ней он скачает Кая и сразу "
+                       "станет твоим другом.", 10000)
+
+    def handle_url(self, url: str) -> None:
+        """kaipet://add?c=KAI-…&n=Имя&t=секрет — из приглашения на сайте."""
+        u = QUrl(url)
+        if u.scheme().lower() != "kaipet" or u.host().lower() != "add":
+            return
+        q = QUrlQuery(u)
+        box = parse_code(q.queryItemValue("c"))
+        name = clean_text(q.queryItemValue("n", QUrl.FullyDecoded), NAME_MAX) or "друг"
+        if not box or box == self.my_id:
+            return
+        if box in self.friends:
+            self.pet.speak(f"{name} уже в друзьях!", 4000)
+            return
+        box_q = QMessageBox(QMessageBox.Question, "Сеть Каев", f"Добавить {name} в друзья Кая?",
+                            QMessageBox.Yes | QMessageBox.No)
+        if self._run_box(box_q) == QMessageBox.Yes:
+            self.add_friend(box, q.queryItemValue("t"))
+
+    def _link_connection(self) -> None:
+        """Ссылка от второго KaiPet.exe (его запустил браузер): строка, в ответ «ok» — тогда он отключается."""
+        sock = self._links.nextPendingConnection()
+        if sock is None:
+            return
+        buf = bytearray()
+
+        def read() -> None:
+            buf.extend(bytes(sock.readAll()))
+            if b"\n" not in buf:
+                return
+            line = bytes(buf).split(b"\n", 1)[0].decode("utf-8", "replace").strip()
+            sock.write(b"ok\n")
+            sock.flush()
+            if line:
+                self.handle_url(line[:500])
+        sock.readyRead.connect(read)
+        sock.disconnected.connect(sock.deleteLater)
+        read()                                                # строка могла прийти раньше подписки
+
     def _allowed(self, sender: str) -> bool:
         now = time.monotonic()
         q = self._recent.setdefault(sender, collections.deque(maxlen=RATE_PER_MIN))
@@ -382,8 +524,16 @@ class Network(QObject):
         name = clean_text(msg.get("name"), NAME_MAX) or "друг"
         friends = self.friends
         if kind == "hello":
+            invites = [t for t in self._state().get("invites", []) if isinstance(t, str)]
             if sender in friends:
                 self.send(sender, "hello_ok")
+            elif isinstance(msg.get("t"), str) and msg["t"] in invites:   # пришёл по нашему приглашению
+                invites.remove(msg["t"])
+                friends[sender] = name
+                self._save(friends=friends, invites=invites)
+                self.send(sender, "hello_ok")
+                self.pet.gesture("heart", 2)
+                self.pet.speak(f"{name} принял приглашение — теперь мы дружим!", 7000)
             else:
                 self._ask_friendship(sender, name)
             return
@@ -400,9 +550,19 @@ class Network(QObject):
         if sender not in friends:                              # гости и открытки — только от друзей
             return
         if kind == "visit":
-            self._guest_comes(sender, friends[sender], safe_look(msg.get("look")))
+            letter = clean_text(msg.get("text"), mail.LETTER_MAX)
+            if letter:
+                mail.add(self, sender, False, letter, via_kai=True)
+            self._guest_comes(sender, friends[sender], safe_look(msg.get("look")), letter)
         elif kind == "visit_done":
-            self._back(friends[sender])
+            self._back(friends[sender], reply=clean_text(msg.get("reply"), mail.LETTER_MAX), box=sender)
+        elif kind == "msg":
+            text = clean_text(msg.get("text"), mail.LETTER_MAX)
+            if text:
+                mail.add(self, sender, False, text)
+                self.pet.gesture("surprised", 1)
+                self.pet._sound("chirp2")
+                self.pet.speak(f"📩 {friends[sender]}: «{text}»", 12000)
         elif kind == "card":
             text = clean_text(msg.get("text"), TEXT_MAX)
             if text:
@@ -445,13 +605,13 @@ class Network(QObject):
     def guests_dir(self) -> Path:
         return self.pet.looks_root().parent / "guests"
 
-    def _guest_comes(self, sender: str, who: str, look: dict) -> None:
+    def _guest_comes(self, sender: str, who: str, look: dict, letter: str = "") -> None:
         from .pet import NEWEST_ANIM, look_id
         if self.guest is not None or not self.pet.isVisible():
             return                                             # один гость за раз; спрятанный Кай гостей не принимает
         folder = self.guests_dir() / look_id(look)
         if (folder / "frames" / NEWEST_ANIM).is_dir():
-            self._arrive(sender, who, folder)
+            self._arrive(sender, who, folder, letter)
             return
         from . import pet as pet_module
         tool = pet_module.exporter()
@@ -478,7 +638,7 @@ class Network(QObject):
                 shutil.rmtree(folder, ignore_errors=True)
                 tmp.rename(folder)
                 self._prune()
-                self._arrive(sender, who, folder)
+                self._arrive(sender, who, folder, letter)
             else:
                 shutil.rmtree(tmp, ignore_errors=True)
         proc.finished.connect(done)
@@ -486,14 +646,20 @@ class Network(QObject):
         self._export = proc
         proc.start()
 
-    def _arrive(self, sender: str, who: str, folder: Path) -> None:
-        self.guest = GuestCtl(self, folder, who, sender)
-        self.guest.start(random.uniform(*VISIT_S))
+    def _arrive(self, sender: str, who: str, folder: Path, letter: str = "") -> None:
+        self.guest = GuestCtl(self, folder, who, sender, letter)
+        stay = random.uniform(*VISIT_S) * (2.5 if letter else 1)     # с письмом ждёт ответа подольше
+        self.guest.start(stay)
+        if letter:
+            QTimer.singleShot(4000, self, lambda: self.open_chat(sender))
 
     def guest_left(self, guest: GuestCtl) -> None:
         if self.guest is guest:
             self.guest = None
-            self.send(guest.sender, "visit_done")
+            self.send(guest.sender, "visit_done", **({"reply": guest.reply} if guest.reply else {}))
+            w = self.windows.get(guest.sender)
+            if w is not None:
+                w.refresh()
 
     def _prune(self) -> None:
         root = self.guests_dir()
@@ -504,13 +670,17 @@ class Network(QObject):
 
     # --- меню ---
     def fill_menu(self, menu: QMenu) -> None:
+        menu.addAction("Пригласить друга (ссылка)…").triggered.connect(lambda _c=False: self.copy_invite())
         menu.addAction(f"Мой код: {self.code} (скопировать)").triggered.connect(lambda _c=False: self.copy_code())
         menu.addAction("Добавить друга по коду…").triggered.connect(lambda _c=False: self._ask_code())
         friends = self.friends
         if friends:
             menu.addSeparator()
         for box, name in friends.items():
-            sub = menu.addMenu(name)
+            new = mail.unread(self, box)
+            sub = menu.addMenu(f"{name} — 📩 {new}" if new else name)
+            sub.addAction("Письма…" + (f" ({new} новых)" if new else "")).triggered.connect(
+                lambda _c=False, b=box: self.open_chat(b))
             go = sub.addAction("Сходить в гости")
             go.setEnabled(self.away is None)
             go.triggered.connect(lambda _c=False, b=box: self.visit(b))
