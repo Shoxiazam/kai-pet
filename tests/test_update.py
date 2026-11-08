@@ -38,3 +38,24 @@ def test_only_installed_kai_updates_itself(monkeypatch):
     assert update.installed()
     monkeypatch.setattr(update.sys, "platform", "darwin")
     assert not update.installed()                         # на Mac — из .dmg, без установщика Windows
+
+
+def test_mac_gets_dmg_and_checks_every_few_hours(monkeypatch):
+    rel = {"tag_name": "v9.0.0", "assets": [{"name": "KaiPet-Setup.exe", "browser_download_url": "w"},
+                                              {"name": "KaiPet-macOS.dmg", "browser_download_url": "https://x/Kai.dmg"}]}
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+    monkeypatch.setattr(update.urllib.request, "urlopen", lambda req, timeout=0: Resp(json.dumps(rel).encode()))
+    monkeypatch.setattr(update.sys, "platform", "darwin")
+    assert update.latest() == ("v9.0.0", "https://x/Kai.dmg")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    assert update.supported()                             # Mac тоже узнаёт о новой версии
+    assert update.due("2026-01-01")                       # старый формат (дата) — проверить
+    assert update.due(None)
+    assert not update.due(1000.0, now=1000.0 + 3600)
+    assert update.due(1000.0, now=1000.0 + update.EVERY_S)

@@ -1,17 +1,19 @@
-"""Обновление Кая в один клик: раз в день смотрит последний выпуск на GitHub и, если он новее, предлагает обновиться.
+"""Обновление Кая в один клик: каждые несколько часов смотрит последний выпуск на GitHub и, если он новее,
+говорит об этом облачком, в меню и у часов.
 
-Только у установленного Кая (KaiPet.exe из KaiPet-Setup.exe): скачивает новый установщик и запускает его тихо —
-галочки прошлой установки сохраняются, Кай перезапускается сам. Из исходников обновляются через git pull.
+Windows (KaiPet.exe из KaiPet-Setup.exe): скачивает новый установщик и запускает его тихо — галочки прошлой
+установки сохраняются, Кай перезапускается сам. Mac (Кай из .dmg): открывает скачивание нового .dmg.
+Из исходников обновляются через git pull.
 """
 from __future__ import annotations
 
-import datetime
 import json
 import logging
 import re
 import sys
 import tempfile
 import threading
+import time
 import urllib.request
 from pathlib import Path
 
@@ -24,6 +26,9 @@ log = logging.getLogger(__name__)
 REPO = "Shoxiazam/kai-pet"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
 SETUP = "KaiPet-Setup.exe"
+DMG = "KaiPet-macOS.dmg"
+PAGE = "https://shoxiazam.github.io/kai-pet/"
+EVERY_S = 6 * 3600                 # не чаще: у GitHub лимит запросов без ключа
 SILENT = ["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]
 
 
@@ -38,18 +43,36 @@ def newer(remote: str, local: str = __version__) -> bool:
 
 
 def installed() -> bool:
-    """Обновлять установщиком можно только установленного Кая на Windows (KaiPet.exe из KaiPet-Setup.exe).
-    На Mac новую версию ставят перетаскиванием из .dmg — проверку обновлений там не показываем."""
+    """Обновлять установщиком можно только установленного Кая на Windows (KaiPet.exe из KaiPet-Setup.exe)."""
     return bool(getattr(sys, "frozen", False)) and sys.platform == "win32"
 
 
+def supported() -> bool:
+    """Собранный Кай (Windows или Mac) — проверяет обновления сам. Из исходников — git pull."""
+    return bool(getattr(sys, "frozen", False)) and sys.platform in ("win32", "darwin")
+
+
+def asset_name() -> str:
+    return DMG if sys.platform == "darwin" else SETUP
+
+
 def latest(timeout: float = 10) -> tuple[str, str] | None:
-    """(версия, ссылка на установщик) последнего выпуска или None."""
+    """(версия, ссылка на файл для этой системы) последнего выпуска или None."""
     req = urllib.request.Request(API, headers={"Accept": "application/vnd.github+json", "User-Agent": "KaiPet-updater"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         rel = json.load(r)
-    url = next((a.get("browser_download_url") for a in rel.get("assets", []) if a.get("name") == SETUP), None)
+    want = asset_name()
+    url = next((a.get("browser_download_url") for a in rel.get("assets", []) if a.get("name") == want), None)
     return (str(rel.get("tag_name", "")), url) if url else None
+
+
+def due(last, now: float | None = None) -> bool:
+    """Пора проверять? last — время прошлой проверки (старые версии хранили дату строкой — считаем давно)."""
+    now = time.time() if now is None else now
+    try:
+        return now - float(last) >= EVERY_S
+    except (TypeError, ValueError):
+        return True
 
 
 class Updater(QObject):
@@ -57,13 +80,16 @@ class Updater(QObject):
     nothing = Signal()               # проверили: это последняя версия (или проверить не вышло)
     downloaded = Signal(str)         # путь к скачанному установщику ("" — не скачалось)
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.available: tuple[str, str] | None = None     # (версия, ссылка) — для пункта «Обновить до …»
+
     def check(self, force: bool = False) -> None:
-        """Раз в день в фоне; force — по кнопке «Проверить обновления»."""
+        """В фоне раз в несколько часов; force — по кнопке «Проверить обновления»."""
         from .pet import load_state, save_state
-        today = datetime.date.today().isoformat()
-        if not force and load_state().get("update_checked") == today:
+        if not force and not due(load_state().get("update_checked")):
             return
-        save_state("update_checked", today)
+        save_state("update_checked", time.time())
         threading.Thread(target=self._check, daemon=True).start()
 
     def _check(self) -> None:
@@ -73,6 +99,7 @@ class Updater(QObject):
             log.info("Обновления не проверены: %s", e)
             got = None
         if got and newer(got[0]):
+            self.available = got
             self.found.emit(*got)
         else:
             self.nothing.emit()

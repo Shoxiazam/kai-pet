@@ -4,8 +4,8 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QTimer
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtCore import QEvent, QObject, QTimer, QUrl
+from PySide6.QtGui import QAction, QDesktopServices, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 from . import __version__, autostart, config, update
@@ -40,8 +40,19 @@ def tray(app: QApplication, pet: Pet) -> QSystemTrayIcon:
     start.setEnabled(autostart.supported())
     start.toggled.connect(autostart.set_enabled)
     menu.addAction(start)
-    if update.installed():
+    if update.supported():
+        upgrade = menu.addAction("Обновить Кая")
+        upgrade.setVisible(False)
+        upgrade.triggered.connect(lambda _c=False: app._updater.install())
+
+        def fresh():
+            got = app._updater.available
+            upgrade.setVisible(bool(got))
+            if got:
+                upgrade.setText(f"Обновить до {got[0].lstrip('v')}")
+        menu.aboutToShow.connect(fresh)
         menu.addAction("Проверить обновления").triggered.connect(lambda _c=False: app._updater.check(force=True))
+        icon.messageClicked.connect(lambda: app._updater.install())
     menu.addSeparator()
     menu.addAction(f"Кай {__version__}").setEnabled(False)
     menu.addAction("Выход").triggered.connect(lambda _c=False: app.quit())
@@ -53,25 +64,47 @@ def tray(app: QApplication, pet: Pet) -> QSystemTrayIcon:
 
 
 def updates(app: QApplication, pet: Pet) -> update.Updater:
-    """Новая версия на GitHub — Кай спрашивает и обновляется сам: скачал установщик, запустил тихо, вышел."""
+    """Новая версия на GitHub — видно сразу: Кай говорит облачком, у часов уведомление, в меню «Обновить до …».
+    Windows: скачал установщик, запустил тихо, вышел. Mac: открывает скачивание нового .dmg."""
+    from .pet import load_state, save_state
     up = update.Updater(app)
     manual = [False]
 
-    def found(version: str, url: str) -> None:
-        box = QMessageBox(QMessageBox.Question, "Кай", f"Вышла новая версия Кая — {version.lstrip('v')} "
-                          f"(у вас {__version__}). Обновить сейчас? Это займёт меньше минуты.",
-                          QMessageBox.Yes | QMessageBox.No)
-        box.setWindowIcon(QIcon(str(ASSETS / "icon.ico")))
-        if box.exec() == QMessageBox.Yes:
+    def install() -> None:
+        if not up.available:
+            return
+        version, url = up.available
+        if sys.platform == "darwin":
+            QDesktopServices.openUrl(QUrl(url))
+            pet.speak("Качаю новую версию! Открой KaiPet-macOS.dmg и перетащи меня в «Программы» с заменой.", 15000)
+        else:
             pet.speak("Скачиваю обновление…", 60000)
             up.download(url)
+
+    def found(version: str, url: str) -> None:
+        v = version.lstrip("v")
+        pet.speak(f"Вышла новая версия меня — {v}! Правый клик по мне → «Обновить».", 15000)
+        icon = getattr(app, "_tray", None)
+        if icon is not None:
+            icon.showMessage("Кай", f"Доступна версия {v} (у вас {__version__}). Нажмите, чтобы обновить.",
+                             QSystemTrayIcon.Information, 10000)
+        if not manual[0] and load_state().get("update_offered") == version:
+            return                                   # окно про эту версию уже было — дальше только облачко и меню
+        manual[0] = False
+        save_state("update_offered", version)
+        box = QMessageBox(QMessageBox.Question, "Кай", f"Вышла новая версия Кая — {v} "
+                          f"(у вас {__version__}). Обновить сейчас? Это займёт меньше минуты.",
+                          QMessageBox.Yes | QMessageBox.No)
+        box.setWindowIcon(QIcon(str(ASSETS / ("icon.png" if sys.platform == "darwin" else "icon.ico"))))
+        if box.exec() == QMessageBox.Yes:
+            install()
 
     def downloaded(path: str) -> None:
         if path and update.run_installer(path):
             pet.speak("Обновляюсь! Сейчас вернусь.", 5000)
             QTimer.singleShot(1500, app.quit)
         else:
-            pet.speak("Не получилось скачать обновление. Попробую завтра.", 6000)
+            pet.speak("Не получилось скачать обновление. Попробую позже.", 6000)
 
     def nothing() -> None:
         if manual[0]:
@@ -81,17 +114,18 @@ def updates(app: QApplication, pet: Pet) -> update.Updater:
     up.found.connect(found)
     up.downloaded.connect(downloaded)
     up.nothing.connect(nothing)
+    up.install = install
     check = up.check
 
     def check_any(force: bool = False) -> None:
         manual[0] = force
         check(force)
     up.check = check_any
-    QTimer.singleShot(30_000, up.check)                       # после запуска — не мешая старту
-    daily = QTimer(app)
-    daily.timeout.connect(up.check)
-    daily.start(6 * 3600 * 1000)                              # сам решит, проверял ли сегодня
-    up._daily = daily
+    QTimer.singleShot(20_000, up.check)                       # после запуска — не мешая старту
+    often = QTimer(app)
+    often.timeout.connect(up.check)
+    often.start(3600 * 1000)                                  # раз в час спрашивает себя; на GitHub — раз в 6 часов
+    up._often = often
     return up
 
 
@@ -164,7 +198,7 @@ def main() -> int:
     app.installEventFilter(app._links)
     pet.quit_requested.connect(app.quit)
     pet.show()
-    if update.installed():
+    if update.supported():
         app._updater = updates(app, pet)
     if QSystemTrayIcon.isSystemTrayAvailable():
         app._tray = tray(app, pet)

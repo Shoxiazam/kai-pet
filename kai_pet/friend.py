@@ -107,9 +107,11 @@ class FriendPet(QWidget):
                 pix = QPixmap(str(f)).scaled(px, px, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 pix.setDevicePixelRatio(dpr)
                 out.append(pix)
-            while len(self.cache) > 12:
+            while len(self.cache) >= 6:              # память не растёт: дольше всех не нужный набор — вон
                 self.cache.pop(next(iter(self.cache)))
             self.cache[name] = out
+        else:
+            self.cache[name] = self.cache.pop(name)
         return self.cache[name]
 
     def has(self, name: str) -> bool:
@@ -603,7 +605,7 @@ class Friends(QObject):
 
     def _tick(self) -> None:
         w = self.widget
-        if w is None:
+        if w is None or not w.isVisible():          # друга спрятали — кадры не рисуем
             return
         games = getattr(self.pet, "games", None)
         ears = games.ears if games is not None and games.active == "seek" else None

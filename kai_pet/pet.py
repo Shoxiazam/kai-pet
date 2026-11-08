@@ -55,7 +55,7 @@ ASSETS = ROOT / "assets"                     # кадры: python -m kai_pet.exp
 # В KaiPet.exe папка с кадрами только для чтения — новые образы Кай рисует в профиль пользователя.
 LOOKS_DIR = data_dir() / "looks" if FROZEN else None
 FPS = {"moods": 12}     # живые эмоции дышат медленнее, остальное 24 к/с
-CACHE_MAX = 10          # наборов кадров в памяти; одна эмоция ≈ 3 МБ
+CACHE_MAX = 6           # наборов кадров в памяти (одна эмоция ≈ 3 МБ); давно не нужные вытесняются первыми
 TIRED_EVERY_S, TIRED_FOR_S = 15 * 60, 20   # после долгой работы: раз в 15 минут устаёт на 20 секунд
 FLASH_S = 8             # эмоция по смыслу держится после кивка
 MUSIC_LEVEL = 0.02      # громкость выше — звучит что-то
@@ -1715,9 +1715,11 @@ class Pet(QWidget):
                 pix = QPixmap(str(f)).scaled(px, px, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 pix.setDevicePixelRatio(dpr)
                 frames.append(pix)
-            while len(self.cache) >= CACHE_MAX:   # самый старый набор — вон, память не растёт
+            while len(self.cache) >= CACHE_MAX:   # дольше всех не нужный набор — вон, память не растёт
                 self.cache.pop(next(iter(self.cache)))
             self.cache[key] = (frames, fps)
+        else:
+            self.cache[key] = self.cache.pop(key)   # только что нужен — в конец очереди на вытеснение
         return self.cache[key]
 
     def _tick(self) -> None:
@@ -1851,6 +1853,16 @@ class Pet(QWidget):
     def hideEvent(self, event):
         super().hideEvent(event)
         self.bubble.hide()
+        for t in ("_timer", "_ear"):               # спрятан — не рисуем кадры и не слушаем звук зря
+            if hasattr(self, t):
+                getattr(self, t).stop()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if hasattr(self, "_timer") and not self._timer.isActive():
+            self._timer.start(1000 // 24)
+        if hasattr(self, "_ear") and not self._ear.isActive():
+            self._ear.start(EAR_MS)
 
     # --- где сидит и как повёрнут ---
     def _area(self) -> QRect:
@@ -2169,6 +2181,10 @@ class Pet(QWidget):
 
     def contextMenuEvent(self, e):
         menu = QMenu()
+        up = getattr(QGuiApplication.instance(), "_updater", None)
+        if up is not None and up.available:              # вышла новая версия — первым пунктом
+            menu.addAction(f"⬆ Обновить до {up.available[0].lstrip('v')}").triggered.connect(lambda _c=False: up.install())
+            menu.addSeparator()
         menu.addAction("Сказать Каю…").triggered.connect(lambda _c=False: self._talk())
         gestures = menu.addMenu("Жесты")
         for name, title in GESTURES.items():
