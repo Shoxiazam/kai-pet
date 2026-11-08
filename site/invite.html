@@ -25,7 +25,9 @@
   * { box-sizing: border-box; }
   body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--ink);
          font: 400 clamp(16px, 1vw + 12px, 18px)/1.6 var(--t); padding: 24px 16px; }
-  :focus-visible { outline: none; box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--acc); border-radius: 10px; }
+  :focus-visible { outline: 3px solid var(--acc); outline-offset: 3px; border-radius: 8px; }
+  ::selection { background: var(--acc-soft); color: var(--ink); }
+  html { scrollbar-color: var(--line) var(--bg); } body { caret-color: var(--acc); }
   body { grid-template-columns: minmax(0, 560px); justify-content: center; }
   main { width: 100%; min-width: 0; max-width: 560px; background: var(--paper); border: 1px solid var(--line); border-radius: 28px;
          padding: clamp(20px, 5vw, 40px); text-align: center; }

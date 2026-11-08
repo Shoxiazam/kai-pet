@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Кай — питомец на рабочем столе</title>
-<meta name="description" content="Кай — живой питомец для Windows: эмоции, танцы под музыку, гардероб, друзья, мини-игры и сторож. Бесплатно, установка за пару кликов.">
-<meta property="og:title" content="Кай — питомец на рабочем столе">
-<meta property="og:description" content="Живой котик (или лисёнок, зайка, мишка) у вас на экране. Скачать бесплатно для Windows.">
+<title>Кай — живой питомец для рабочего стола</title>
+<meta name="description" content="Кай — живой питомец для рабочего стола Windows и Mac: танцует под музыку, переодевается, ходит в гости к Каям друзей и носит письма. Бесплатно.">
+<meta property="og:title" content="Кай — живой питомец для рабочего стола">
+<meta property="og:description" content="Котик, лисёнок, зайка или мишка у вас на экране. Бесплатно для Windows и Mac.">
 <meta property="og:image" content="https://shoxiazam.github.io/kai-pet/img/duo-hold.png">
 <meta name="theme-color" content="#FBF6EE" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1C1816" media="(prefers-color-scheme: dark)">
@@ -15,338 +15,431 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=Onest:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  /* Направление: «тёплая книжка с картинками». Бумага, коричневые чернила, терракота Кая, мята друзей. */
+  /* Мир: «тёплая книжка с картинками» + мягкий объём (claymorphism, ui-ux-pro-max: Pet Tech App).
+     Продукт показывается, а не описывается: в каждой главе живой Кай в сцене рабочего стола (taste-skill).
+     Один авторский момент — письма в главе «Сеть Каев» (impeccable craft-floor). */
   :root {
-    --n0: #FFFDF9; --n50: #FBF6EE; --n100: #F4ECDF; --n200: #E7DACA; --n400: #A8988B; --n600: #6E625B; --n900: #3B3330;
-    --bg: var(--n50); --paper: var(--n0); --soft: var(--n100); --line: var(--n200); --muted: var(--n600); --ink: var(--n900);
+    --bg: #FBF6EE; --paper: #FFFDF9; --soft: #F4ECDF; --line: #E7DACA; --muted: #6E625B; --ink: #3B3330;
     --acc: #B5532F; --acc-hover: #9E4627; --acc-ink: #FFFFFF; --acc-soft: #F6DED2;
-    --mint: #2E8C6E; --mint-soft: #DDF1E8;
-    --ring: 0 0 0 3px var(--bg), 0 0 0 6px var(--acc);
-    --ease-out: cubic-bezier(.22, 1, .36, 1); --ease-io: cubic-bezier(.65, 0, .35, 1);
-    --r: 20px;
-    --h: "Nunito", "Segoe UI", system-ui, sans-serif; --t: "Onest", "Segoe UI", system-ui, sans-serif;
+    --mint: #2E8C6E; --mint-soft: #DDF1E8; --sky: #DCE9F5; --desk: #E9DDCC;
+    --shadow: 0 1px 1px rgba(59,51,48,.04), 0 10px 24px -8px rgba(59,51,48,.18), 0 30px 60px -30px rgba(59,51,48,.22);
+    --press: inset 0 2px 0 rgba(255,255,255,.35), inset 0 -3px 0 rgba(0,0,0,.12);
+    --ease-out: cubic-bezier(.16, 1, .3, 1); --ease-io: cubic-bezier(.65, 0, .35, 1);
+    --r: 24px; --h: "Nunito", "Segoe UI", system-ui, sans-serif; --t: "Onest", "Segoe UI", system-ui, sans-serif;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
-      --n0: #26201D; --n50: #1C1816; --n100: #2F2825; --n200: #43392F; --n400: #8F8176; --n600: #BDB0A6; --n900: #F2EBE4;
-      --acc: #F08A63; --acc-hover: #F6A07F; --acc-ink: #1C1816; --acc-soft: #4A2C21;
-      --mint: #6FD3AE; --mint-soft: #1F3A31;
-    }
+    :root { --bg: #1C1816; --paper: #26201D; --soft: #2F2825; --line: #43392F; --muted: #BDB0A6; --ink: #F2EBE4;
+            --acc: #F08A63; --acc-hover: #F6A07F; --acc-ink: #1C1816; --acc-soft: #4A2C21;
+            --mint: #6FD3AE; --mint-soft: #1F3A31; --sky: #22303A; --desk: #2A231F;
+            --shadow: 0 1px 1px rgba(0,0,0,.2), 0 12px 28px -10px rgba(0,0,0,.55), 0 30px 60px -30px rgba(0,0,0,.6); }
   }
   * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 400 clamp(16px, 1.1vw + 12px, 18px)/1.6 var(--t);
-         -webkit-font-smoothing: antialiased; }
-  h1, h2, h3 { font-family: var(--h); line-height: 1.08; letter-spacing: -.015em; margin: 0; }
-  p { margin: 0; }
-  a { color: var(--acc); text-underline-offset: 3px; }
+  html { scroll-behavior: smooth; scrollbar-color: var(--line) var(--bg); }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 400 clamp(16px, .5vw + 14px, 18px)/1.6 var(--t);
+         -webkit-font-smoothing: antialiased; caret-color: var(--acc); }
+  ::selection { background: var(--acc-soft); color: var(--ink); }
+  ::-webkit-scrollbar { width: 12px; } ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 12px; border: 3px solid var(--bg); }
+  h1, h2, h3 { font-family: var(--h); line-height: 1.06; letter-spacing: -.02em; margin: 0; text-wrap: balance; }
+  p { margin: 0; text-wrap: pretty; }
+  a { color: var(--acc); text-underline-offset: .2em; text-decoration-thickness: 1.5px; }
   a:hover { color: var(--acc-hover); }
-  :focus-visible { outline: none; box-shadow: var(--ring); border-radius: 10px; }
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 32px); }
-  .measure { max-width: 62ch; }
+  :focus-visible { outline: 3px solid var(--acc); outline-offset: 3px; border-radius: 8px; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 40px); }
+  .measure { max-width: 60ch; }
+  .skip { position: absolute; left: 16px; top: -60px; background: var(--paper); padding: 10px 14px; border-radius: 10px; z-index: 9; }
+  .skip:focus { top: 12px; }
+  .ic { width: 22px; height: 22px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 
   /* --- шапка --- */
-  .top { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; }
-  .logo { display: flex; align-items: center; gap: 8px; font: 900 22px var(--h); color: var(--ink); text-decoration: none; }
-  .logo img { width: 32px; height: 32px; }
-  .nav a { margin-left: 24px; color: var(--muted); text-decoration: none; font-weight: 500; font-size: 15px;
-           transition: color .15s var(--ease-out); }
-  .nav a:hover { color: var(--ink); }
+  .top { display: flex; align-items: center; justify-content: space-between; padding: 18px 0; }
+  .logo { display: flex; align-items: center; gap: 10px; font: 900 22px var(--h); color: var(--ink); text-decoration: none; }
+  .logo img { width: 34px; height: 34px; }
+  .nav { display: flex; gap: 6px; }
+  .nav a { color: var(--muted); text-decoration: none; font-weight: 500; font-size: 15px; padding: 10px 12px; border-radius: 10px;
+           transition: color .15s var(--ease-out), background-color .15s var(--ease-out); }
+  .nav a:hover { color: var(--ink); background: var(--soft); }
 
-  /* --- первый экран --- */
-  .hero { display: grid; grid-template-columns: 1.15fr .85fr; gap: clamp(24px, 4vw, 48px); align-items: center;
-          padding: clamp(16px, 4vw, 48px) 0 clamp(40px, 6vw, 72px); }
-  .badge { display: inline-flex; gap: 8px; align-items: center; background: var(--mint-soft); color: var(--mint);
-           font-weight: 600; font-size: 14px; padding: 6px 12px; border-radius: 999px; margin-bottom: 16px; }
-  h1 { font-size: clamp(36px, 5.6vw, 64px); font-weight: 900; margin-bottom: 16px; }
-  h1 em { font-style: normal; color: var(--acc); }
-  .lead { font-size: clamp(17px, 1.3vw + 12px, 20px); color: var(--muted); margin-bottom: 28px; }
-  .actions { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; }
-  .btn { display: inline-flex; align-items: center; gap: 10px; border: 0; cursor: pointer; text-decoration: none;
-         background: var(--acc); color: var(--acc-ink); font: 800 clamp(17px, 1vw + 12px, 19px) var(--h);
-         padding: 16px 26px; border-radius: 16px; box-shadow: 0 10px 24px -10px rgba(181, 83, 47, .6);
-         transition: transform .18s var(--ease-out), background-color .18s var(--ease-out), box-shadow .18s var(--ease-out); }
-  .btn:hover { color: var(--acc-ink); background: var(--acc-hover); transform: translateY(-2px);
-               box-shadow: 0 14px 28px -12px rgba(181, 83, 47, .7); }
-  .btn:active { transform: scale(.97); transition-duration: .1s; }
-  .btn svg { width: 22px; height: 22px; transition: transform .2s var(--ease-out); }
-  .btn:hover svg { transform: translateY(2px); }
-  .btn[aria-busy="true"] svg { animation: nudge .6s var(--ease-io) 2; }
-  @keyframes nudge { 50% { transform: translateY(4px); } }
-  .ghost { color: var(--ink); font-weight: 600; text-decoration: none; border-bottom: 2px solid var(--line);
-           transition: border-color .15s var(--ease-out); }
-  .ghost:hover { color: var(--ink); border-color: var(--acc); }
-  .meta { margin-top: 14px; font-size: 14px; color: var(--muted); }
-  .status { margin-top: 10px; min-height: 1.5em; font-size: 14px; color: var(--mint); font-weight: 600; }
+  /* --- кнопки: шаг при наведении, нажатие --- */
+  .btn { display: inline-flex; align-items: center; gap: 10px; min-height: 52px; border: 0; cursor: pointer; text-decoration: none;
+         background: var(--acc); color: var(--acc-ink); font: 800 18px var(--h); padding: 14px 24px; border-radius: 16px;
+         box-shadow: var(--press), 0 10px 22px -10px rgba(181, 83, 47, .7);
+         transition: transform .2s var(--ease-out), background-color .2s var(--ease-out), box-shadow .2s var(--ease-out); }
+  .btn:hover { color: var(--acc-ink); background: var(--acc-hover); transform: translateY(-2px); }
+  .btn:active { transform: translateY(1px) scale(.98); box-shadow: inset 0 2px 4px rgba(0,0,0,.18); transition-duration: .08s; }
+  .btn .ic { width: 22px; height: 22px; stroke-width: 2.2; transition: transform .25s var(--ease-out); }
+  .btn:hover .ic { transform: translateY(2px); }
+  .btn[aria-busy="true"] .ic { animation: nudge .6s var(--ease-io) 2; }
+  @keyframes nudge { 50% { transform: translateY(5px); } }
+  .btn.mint { background: var(--mint); box-shadow: var(--press), 0 10px 22px -10px rgba(46, 140, 110, .7); }
+  .link { display: inline-flex; align-items: center; min-height: 44px; color: var(--ink); font-weight: 600; text-decoration: none;
+          background: linear-gradient(var(--acc), var(--acc)) 0 calc(100% - 8px) / 0 2px no-repeat; transition: background-size .3s var(--ease-out); }
+  .link:hover { color: var(--ink); background-size: 100% 2px; }
+  [hidden] { display: none !important; }
+  body:not(.is-mac) .only-mac, .is-mac .only-win { display: none !important; }
 
-  .stage { position: relative; display: grid; place-items: center; aspect-ratio: 1; max-width: 420px; width: 100%;
-           margin-inline: auto; border-radius: 50%;
-           background: radial-gradient(closest-side, var(--acc-soft), transparent 72%); }
-  .say { position: absolute; top: 10%; right: 4%; background: var(--paper); color: var(--ink); border: 2px solid var(--ink);
-         border-radius: 16px; padding: 6px 14px; font: 800 16px var(--h); }
-  .say::after { content: ""; position: absolute; left: 22px; bottom: -9px; width: 14px; height: 14px; background: var(--paper);
+  /* --- сцена рабочего стола: продукт как он есть --- */
+  .desk { position: relative; border-radius: 28px; background: var(--sky); box-shadow: var(--shadow); overflow: hidden;
+          border: 1px solid var(--line); }
+  .desk::after { content: ""; position: absolute; inset: auto 0 0 0; height: 44px; background: color-mix(in srgb, var(--paper) 75%, transparent);
+                 border-top: 1px solid var(--line); }                                             /* панель задач */
+  .win { position: absolute; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+  .win .bar { height: 30px; display: flex; gap: 6px; align-items: center; padding: 0 12px; border-bottom: 1px solid var(--line); }
+  .win .bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+  .win .lines { padding: 14px; display: grid; gap: 9px; }
+  .win .lines b { height: 9px; border-radius: 5px; background: var(--soft); display: block; }
+  .sprite { --w: 220px; --hgt: 220px; --fw: var(--w); position: absolute; width: var(--w); height: var(--hgt); background-repeat: no-repeat;
+            background-size: calc(var(--fw) * var(--n)) var(--hgt); animation: frames var(--d, 1s) steps(var(--n)) infinite; }
+  @keyframes frames { to { background-position-x: calc(var(--fw) * var(--n) * -1); } }
+  .say { position: absolute; background: var(--paper); color: var(--ink); border: 2px solid var(--ink); border-radius: 16px;
+         padding: 6px 14px; font: 800 16px var(--h); white-space: nowrap; }
+  .say::after { content: ""; position: absolute; left: 24px; bottom: -9px; width: 14px; height: 14px; background: var(--paper);
                 border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink); transform: rotate(45deg); }
 
-  /* --- персонажи: ленты кадров, шаги без сглаживания --- */
-  .sprite { --w: 220px; --h: 220px; --fw: var(--w); width: var(--w); height: var(--h); background-repeat: no-repeat;
-            background-size: calc(var(--fw) * var(--n)) var(--h); animation: frames var(--d, 1s) steps(var(--n)) infinite; }
-  @keyframes frames { to { background-position-x: calc(var(--fw) * var(--n) * -1); } }
+  /* --- первый экран --- */
+  .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: clamp(28px, 4vw, 56px); align-items: center;
+          min-height: min(760px, calc(100svh - 80px)); padding: 12px 0 48px; }
+  h1 { font-size: clamp(38px, 4.8vw, 66px); font-weight: 900; margin-bottom: 18px; }
+  h1 em { font-style: normal; color: var(--acc); }
+  .lead { font-size: clamp(18px, .6vw + 15px, 21px); color: var(--muted); margin-bottom: 22px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0 0 28px; padding: 0; list-style: none; font-weight: 600; font-size: 15px; }
+  .facts li { display: inline-flex; align-items: center; gap: 8px; }
+  .facts .ic { color: var(--mint); width: 20px; height: 20px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; }
+  .meta { margin-top: 12px; font-size: 14px; color: var(--muted); }
+  .status { margin-top: 6px; min-height: 1.5em; font-size: 14px; color: var(--mint); font-weight: 600; }
+  .hero .desk { width: 100%; aspect-ratio: 5 / 4; min-height: 320px; }
+  .scene { width: 100%; }
+  .hero .win { left: 8%; right: 12%; top: 50%; bottom: calc(44px + 7%); }
+  .hero .kai { --w: 200px; --hgt: 200px; --n: 24; --d: 1s; left: 44%; top: calc(50% - 172px); background-image: url(img/kai-wave.png); }
+  .hero .say { left: calc(44% + 168px); top: calc(50% - 200px); }
+  /* единственный вход при загрузке: окно поднимается, Кай спрыгивает на его край, облачко появляется последним */
+  .enter .win { animation: up .8s var(--ease-out) both; }
+  .enter .kai { animation: drop .7s .35s var(--ease-out) both, frames 1s steps(24) 1.05s infinite; }
+  .enter .say { animation: pop .45s 1.05s var(--ease-out) both; transform-origin: 20% 100%; }
+  /* из уже видимого состояния: застынет анимация (фоновая вкладка) — Кай всё равно на месте */
+  @keyframes up { from { transform: translateY(18px); } }
+  @keyframes drop { from { transform: translateY(-36px); } }
+  @keyframes pop { from { transform: scale(.85); } }
 
-  /* --- секции --- */
-  section { padding: clamp(40px, 6vw, 80px) 0; }
-  .eyebrow { font: 800 14px var(--h); letter-spacing: .08em; text-transform: uppercase; color: var(--acc); margin-bottom: 10px; }
-  h2 { font-size: clamp(28px, 3.6vw, 42px); font-weight: 900; margin-bottom: 12px; }
-  .sub { color: var(--muted); margin-bottom: clamp(24px, 3vw, 36px); }
+  /* --- главы --- */
+  section { padding: clamp(56px, 8vw, 112px) 0; }
+  h2 { font-size: clamp(30px, 3.6vw, 48px); font-weight: 900; margin-bottom: 14px; }
+  .sub { color: var(--muted); margin-bottom: 26px; }
+  .chapter { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(28px, 5vw, 72px); align-items: center; }
+  .chapter.flip > :first-child { order: 2; }
+  .points { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
+  .points li { display: grid; grid-template-columns: 44px 1fr; gap: 14px; align-items: start; }
+  .points .badge { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--acc-soft); color: var(--acc);
+                   box-shadow: var(--press); }
+  .points.mintish .badge { background: var(--mint-soft); color: var(--mint); }
+  .points b { display: block; font: 800 18px/1.3 var(--h); margin-bottom: 2px; }
+  .points span { color: var(--muted); font-size: 16px; }
+  .scene { aspect-ratio: 4 / 3; }
 
-  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; counter-reset: s; }
-  .step { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); padding: 24px; }
-  .step::before { counter-increment: s; content: counter(s); display: grid; place-items: center; width: 40px; height: 40px;
-                  border-radius: 12px; background: var(--acc-soft); color: var(--acc); font: 900 20px var(--h); margin-bottom: 14px; }
-  .step h3 { font-size: 20px; margin-bottom: 6px; }
-  .step p { color: var(--muted); font-size: 15px; }
-  .note { display: flex; gap: 14px; margin-top: 20px; background: var(--soft); border-radius: var(--r); padding: 18px 20px; font-size: 15px; }
-  .note .i { font-size: 22px; line-height: 1.2; }
+  /* плеер и танец */
+  .player { position: absolute; left: 7%; bottom: calc(44px + 8%); width: min(300px, 56%); display: grid; grid-template-columns: 54px 1fr;
+            gap: 12px; align-items: center; padding: 12px; }
+  .player .cover { width: 54px; height: 54px; border-radius: 12px; background: linear-gradient(135deg, #E05A47, #F2C14E); }
+  .player .t { font: 800 15px/1.25 var(--h); } .player .a { color: var(--muted); font-size: 13px; }
+  .player .eq { display: flex; gap: 3px; align-items: end; height: 16px; margin-top: 6px; }
+  .player .eq i { width: 4px; background: var(--acc); border-radius: 2px; animation: eq 1s var(--ease-io) infinite alternate; }
+  .player .eq i:nth-child(2) { animation-delay: -.3s; } .player .eq i:nth-child(3) { animation-delay: -.6s; } .player .eq i:nth-child(4) { animation-delay: -.15s; }
+  @keyframes eq { from { height: 20%; } to { height: 100%; } }
+  .dance { --w: 210px; --hgt: 210px; --n: 16; --d: .67s; right: 8%; bottom: 44px; background-image: url(img/kai-dance.png); }
 
-  /* возможности: разная ширина карточек — не сетка-шаблон */
-  .features { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
-  .f { grid-column: span 2; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); padding: 22px;
-       transition: transform .2s var(--ease-out), border-color .2s var(--ease-out); }
-  .f:hover { transform: translateY(-3px); border-color: var(--acc); }
-  .f.wide { grid-column: span 3; }
-  .f .ic { width: 44px; height: 44px; display: grid; place-items: center; font-size: 24px; border-radius: 12px;
-           background: var(--soft); margin-bottom: 12px; }
-  .f h3 { font-size: 19px; margin-bottom: 6px; }
-  .f p { color: var(--muted); font-size: 15px; }
+  /* друзья */
+  .duo { --w: 362px; --hgt: 248px; --n: 24; --d: 2s; left: 50%; bottom: 44px; transform: translateX(-50%); background-image: url(img/duo-hold.png); }
 
-  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(24px, 4vw, 56px); align-items: center;
-         background: var(--mint-soft); border-radius: 32px; padding: clamp(24px, 4vw, 48px); }
-  .duo .eyebrow { color: var(--mint); }
-  .duo ul { margin: 16px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
-  .duo li { display: flex; gap: 10px; }
-  .duo li::before { content: "✓"; color: var(--mint); font-weight: 900; }
-  .duo .sprite { --w: 362px; --h: 248px; }
+  /* письма: живое окно переписки, как в самом Кае */
+  .chat { position: relative; background: var(--paper); border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow);
+          overflow: hidden; max-width: 440px; margin-inline: auto; }
+  .chat .bar { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); font: 800 16px var(--h); }
+  .chat .bar img { width: 32px; height: 32px; }
+  .chat .msgs { display: grid; gap: 10px; padding: 16px; min-height: 300px; align-content: start; }
+  .msg { max-width: 82%; padding: 9px 13px; border-radius: 16px; font-size: 15px; line-height: 1.4; }
+  .msg b { display: block; font: 800 13px var(--h); margin-bottom: 1px; }
+  .msg.them { background: var(--mint-soft); border-bottom-left-radius: 6px; }
+  .msg.me { background: var(--acc-soft); justify-self: end; border-bottom-right-radius: 6px; }
+  .msg.kai { display: flex; gap: 10px; align-items: center; background: var(--soft); justify-self: center; font-size: 14px; color: var(--muted); }
+  .msg.kai img { width: 30px; height: 30px; }
+  .chat .compose { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }
+  .chat .compose span { flex: 1; min-height: 44px; display: flex; align-items: center; padding: 0 12px; border-radius: 12px;
+                        border: 1px solid var(--line); color: var(--muted); font-size: 15px; }
+  .chat .compose b { min-height: 44px; display: inline-flex; align-items: center; gap: 6px; padding: 0 14px; border-radius: 12px;
+                     background: var(--mint); color: #fff; font: 800 14px var(--h); }
+  .js .chat .msg { opacity: 0; transform: translateY(10px) scale(.98); }
+  .chat.play .msg { animation: msg .5s var(--ease-out) forwards; animation-delay: calc(var(--i) * 700ms); }
+  @keyframes msg { to { opacity: 1; transform: none; } }
 
-  .gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-  figure { margin: 0; }
-  .gallery img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #FFFDF9;
-                 border: 1px solid var(--line); border-radius: var(--r); }
-  figcaption { font-size: 14px; color: var(--muted); margin-top: 8px; }
+  /* гардероб */
+  .wardrobe { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 16px; }
+  .wardrobe img { display: block; width: 100%; height: 100%; object-fit: contain; background: #FFFDF9; border: 1px solid var(--line);
+                  border-radius: var(--r); box-shadow: var(--shadow); transition: transform .4s var(--ease-out); }
+  .wardrobe a { display: block; border-radius: var(--r); overflow: hidden; }
+  .wardrobe a:hover img { transform: scale(1.025); }
 
-  .stickers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-  .st { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 10px 8px;
-        text-align: center; transition: transform .2s var(--ease-out); }
-  .st:hover { transform: translateY(-3px) rotate(-1.5deg); }
-  .st video { width: 100%; aspect-ratio: 1; display: block; }
-  .st figcaption { margin-top: 2px; }
-  .row { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; margin-top: 22px; }
-  .net { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-  .faq { display: grid; gap: 10px; }
+  /* стикеры: как в Telegram — пузыри со стикерами */
+  .tg { background: var(--sky); border-radius: 28px; padding: clamp(16px, 3vw, 28px); box-shadow: var(--shadow); border: 1px solid var(--line); }
+  .tg .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .tg video { width: 100%; aspect-ratio: 1; display: block; transition: transform .3s var(--ease-out); }
+  .tg video:hover { transform: scale(1.06) rotate(-2deg); }
+  .row { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; margin-top: 26px; }
+
+  /* установка: шаги идут по порядку — номера несут смысл */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; counter-reset: s; margin: 0; padding: 0; list-style: none; }
+  .steps li { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); padding: 24px; box-shadow: var(--shadow); }
+  .steps li::before { counter-increment: s; content: counter(s); display: grid; place-items: center; width: 42px; height: 42px;
+                      border-radius: 13px; background: var(--acc); color: var(--acc-ink); font: 900 20px var(--h); margin-bottom: 14px; box-shadow: var(--press); }
+  .steps b { display: block; font: 800 20px var(--h); margin-bottom: 4px; }
+  .steps span { color: var(--muted); font-size: 16px; }
+  .note { display: flex; gap: 14px; align-items: flex-start; margin-top: 18px; background: var(--soft); border-radius: var(--r); padding: 18px 20px; font-size: 15px; }
+  .note .ic { color: var(--acc); margin-top: 2px; }
+
+  /* вопросы */
+  .faq { display: grid; gap: 10px; max-width: 780px; }
   details { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; transition: border-color .2s var(--ease-out); }
   details[open] { border-color: var(--acc); }
-  summary { cursor: pointer; list-style: none; padding: 16px 20px; font-weight: 600; display: flex; justify-content: space-between; gap: 16px; }
+  summary { cursor: pointer; list-style: none; min-height: 56px; padding: 14px 20px; font-weight: 600; display: flex; justify-content: space-between;
+            align-items: center; gap: 16px; }
   summary::-webkit-details-marker { display: none; }
-  summary::after { content: "+"; font: 900 22px/1 var(--h); color: var(--acc); transition: transform .25s var(--ease-out); }
-  details[open] summary::after { transform: rotate(45deg); }
+  summary .ic { color: var(--acc); transition: transform .3s var(--ease-out); }
+  details[open] summary .ic { transform: rotate(45deg); }
   details p { padding: 0 20px 18px; color: var(--muted); }
-  details[open] p { animation: open .3s var(--ease-out); }
+  details[open] p { animation: open .35s var(--ease-out); }
   @keyframes open { from { opacity: 0; transform: translateY(-6px); } }
 
-  .final { text-align: center; padding: clamp(48px, 7vw, 96px) 0; }
-  .final .sprite { margin: 0 auto 8px; --w: 180px; --h: 180px; }
+  .final { text-align: center; }
+  .final .desk { aspect-ratio: auto; height: 220px; max-width: 520px; margin: 0 auto 28px; }
+  .final .heart { --w: 180px; --hgt: 180px; --n: 24; --d: 1s; left: 50%; bottom: 44px; transform: translateX(-50%); background-image: url(img/kai-heart.png); }
   .final .sub { margin-inline: auto; }
-  footer { border-top: 1px solid var(--line); padding: 24px 0 40px; color: var(--muted); font-size: 14px;
-           display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+  footer { border-top: 1px solid var(--line); padding: 26px 0 44px; color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap;
+           gap: 8px 24px; justify-content: space-between; }
 
-  /* --- появление: при загрузке и при прокрутке (один раз), только opacity и transform --- */
-  .rise { opacity: 0; transform: translateY(14px); transition: opacity .55s var(--ease-out), transform .55s var(--ease-out);
-          transition-delay: calc(var(--i, 0) * 70ms); }
-  .rise.in { opacity: 1; transform: none; }
-  .no-js .rise { opacity: 1; transform: none; }
-  body:not(.is-mac) .only-mac, .is-mac .only-win { display: none; }
-  [hidden] { display: none !important; }   /* своё для Mac и для Windows */
-
-  @media (max-width: 860px) {
-    .hero, .duo { grid-template-columns: 1fr; }
-    .stage { max-width: 300px; order: -1; }
-    .sprite { --w: 180px; --h: 180px; }
-    .duo .sprite { --w: 290px; --h: 199px; }
-    .steps, .gallery, .net { grid-template-columns: 1fr; }
-    .stickers { grid-template-columns: repeat(2, 1fr); }
-    .features { grid-template-columns: 1fr 1fr; }
-    .f, .f.wide { grid-column: span 1; }
+  @media (max-width: 900px) {
+    .hero, .chapter, .wardrobe { grid-template-columns: 1fr; }
+    .hero { min-height: 0; } .chapter.flip > :first-child { order: 0; }
     .nav a:not(.gh) { display: none; }
+    .steps { grid-template-columns: 1fr; }
+    .tg .grid { grid-template-columns: repeat(4, 1fr); }
   }
-  @media (max-width: 480px) { .features { grid-template-columns: 1fr; } .duo .sprite { --w: 250px; --h: 171px; } }
+  @media (max-width: 520px) {
+    .hero .kai { --w: 150px; --hgt: 150px; top: calc(50% - 130px); left: 36%; }
+    .hero .say { left: auto; right: 6%; top: 10%; font-size: 14px; }
+    .dance { --w: 150px; --hgt: 150px; } .duo { --w: 290px; --hgt: 199px; }
+    .player { width: 62%; }
+    .tg .grid { grid-template-columns: repeat(2, 1fr); }
+    .btn { width: 100%; justify-content: center; }
+  }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
-    .rise { opacity: 1; transform: none; }
+    .js .chat .msg { opacity: 1; transform: none; }
   }
 </style>
 </head>
-<body class="no-js">
+<body>
+<a class="skip" href="#main">Перейти к содержимому</a>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12m0 0-5-5m5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V6l11-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></symbol>
+  <symbol id="i-face" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c1 1.3 2.2 2 3.5 2s2.5-.7 3.5-2M9 9.5h.01M15 9.5h.01"/></symbol>
+  <symbol id="i-cup" viewBox="0 0 24 24"><path d="M5 9h11v5a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5V9Z"/><path d="M16 11h1.5a2.5 2.5 0 0 1 0 5H16M8 3v3M12 3v3"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M3 11c2-1 3.5 1 5 0s3-1 4.5 0 3 1 4.5 0 3-1 4 0"/><path d="M7 15c1.5-.7 2.5.7 3.5 0s2-.7 3 0 2 .7 3.5 0"/></symbol>
+  <symbol id="i-paw" viewBox="0 0 24 24"><ellipse cx="12" cy="16" rx="4.5" ry="3.6"/><circle cx="6" cy="10.5" r="1.8"/><circle cx="9.5" cy="6.5" r="1.8"/><circle cx="14.5" cy="6.5" r="1.8"/><circle cx="18" cy="10.5" r="1.8"/></symbol>
+  <symbol id="i-hands" viewBox="0 0 24 24"><path d="M3 13c3 0 4-3 6.5-3S12 12 12 12s.5-2 2.5-2S18 13 21 13"/><path d="M6 17c2 0 3.5-1.5 6-1.5S16 17 18 17"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M8 9.5h8M8 12.5h5"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+  <symbol id="i-door" viewBox="0 0 24 24"><path d="M5 21V4h11v17M3 21h18"/><path d="M13 12h.01"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8.2 7 10 4-1.8 7-5.5 7-10V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-gift" viewBox="0 0 24 24"><path d="M4 11h16v9H4zM3 7h18v4H3zM12 7v13M12 7c-1.5-3-5-3-5-1s3 1 5 1Zm0 0c1.5-3 5-3 5-1s-3 1-5 1Z"/></symbol>
+</svg>
 <div class="wrap">
   <header class="top">
-    <a class="logo" href="#"><img src="img/favicon.png" alt="" width="32" height="32">Кай</a>
-    <nav class="nav" aria-label="Разделы"><a href="#install">Установка</a><a href="#features">Что умеет</a>
-      <a href="#faq">Вопросы</a><a class="gh" href="https://github.com/Shoxiazam/kai-pet">GitHub</a></nav>
+    <a class="logo" href="#"><img src="img/favicon.png" alt="" width="34" height="34">Кай</a>
+    <nav class="nav" aria-label="Разделы"><a href="#live">Что умеет</a><a href="#network">Сеть Каев</a>
+      <a href="#install">Установка</a><a class="gh" href="https://github.com/Shoxiazam/kai-pet">GitHub</a></nav>
   </header>
 
-  <main>
+  <main id="main">
     <div class="hero">
       <div>
-        <div class="badge rise" style="--i:0">✨ <span id="ver">Новое: друзья, танцы вдвоём, обновление в один клик</span></div>
-        <h1 class="rise" style="--i:1">Живой питомец <em>у&nbsp;вас на&nbsp;экране</em></h1>
-        <p class="lead measure rise" style="--i:2">Кай радуется, когда вы рядом, танцует под музыку, переодевается, зовёт
-          друзей в гости и сторожит ноутбук, пока вас нет. Бесплатно и без рекламы.</p>
-        <div class="actions rise" style="--i:3">
+        <h1>Живой питомец для <em>рабочего стола</em></h1>
+        <p class="lead measure">Кай сидит на окнах, танцует под вашу музыку, переодевается в шкафу и ходит в гости
+          к Каям друзей — с письмами. Котик, лисёнок, зайка или мишка.</p>
+        <ul class="facts">
+          <li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>Бесплатно, без рекламы</li>
+          <li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>Windows и Mac</li>
+          <li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>Ставится за 10 секунд</li>
+        </ul>
+        <div class="actions">
           <a class="btn" id="download" data-win="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-Setup.exe"
              data-mac="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-macOS.dmg"
              href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-Setup.exe">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 21h16"/></svg>
-            <span id="download-label">Скачать для Windows</span>
-          </a>
-          <a class="ghost only-win" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-macOS.dmg">Для Mac</a>
-          <a class="ghost only-mac" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-Setup.exe">Для Windows</a>
-          <a class="ghost only-win" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-portable.zip">Без установки (zip)</a>
+            <svg class="ic" aria-hidden="true"><use href="#i-down"/></svg><span id="download-label">Скачать для Windows</span></a>
+          <a class="link only-win" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-macOS.dmg">Версия для Mac</a>
+          <a class="link only-mac" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-Setup.exe">Версия для Windows</a>
         </div>
-        <p class="meta rise" style="--i:4" id="meta">Windows 10 и 11 · macOS на Apple M1 и новее · бесплатно</p>
+        <p class="meta" id="meta">Windows 10 и 11 · macOS на Apple M1 и новее</p>
         <p class="status" id="status" role="status" aria-live="polite"></p>
       </div>
-      <div class="stage rise" style="--i:2" aria-hidden="true">
-        <div class="say">Привет! 👋</div>
-        <div class="sprite" style="background-image:url(img/kai-wave.png); --n:24; --d:1s"></div>
+      <div class="desk enter" role="img" aria-label="Кай сидит на окне рабочего стола и машет: «Привет!»">
+        <div class="win"><div class="bar"><i></i><i></i><i></i></div>
+          <div class="lines"><b style="width:62%"></b><b style="width:88%"></b><b style="width:74%"></b><b style="width:80%"></b><b style="width:45%"></b></div></div>
+        <div class="sprite kai"></div>
+        <div class="say">Привет!</div>
       </div>
     </div>
 
-    <section id="install" aria-labelledby="t-install">
-      <p class="eyebrow">Установка</p>
-      <h2 id="t-install">Три шага — и Кай уже машет вам</h2>
-      <p class="sub measure">Ничего дополнительно ставить не нужно: ни Python, ни Node.js. Обновления Кай потом ставит сам.</p>
-      <div class="steps only-win">
-        <div class="step rise" style="--i:0"><h3>Скачайте</h3><p>Кнопка «Скачать для Windows» — загрузится KaiPet-Setup.exe.</p></div>
-        <div class="step rise" style="--i:1"><h3>Запустите</h3><p>Откройте файл и нажмите «Установить». Можно сразу включить запуск вместе с Windows.</p></div>
-        <div class="step rise" style="--i:2"><h3>Готово</h3><p>Кай появится в углу экрана. Правый клик по нему — меню, игры, друзья и гардероб.</p></div>
-      </div>
-      <div class="steps only-mac">
-        <div class="step rise" style="--i:0"><h3>Скачайте</h3><p>«Скачать для Mac» — загрузится KaiPet-macOS.dmg.</p></div>
-        <div class="step rise" style="--i:1"><h3>Перетащите</h3><p>Откройте .dmg и перетащите Кая в папку «Программы».</p></div>
-        <div class="step rise" style="--i:2"><h3>Откройте</h3><p>Первый раз: правый клик по Каю → «Открыть». Дальше он запускается как обычно.</p></div>
-      </div>
-      <div class="note rise only-mac" style="--i:3"><span class="i" aria-hidden="true">🍏</span>
-        <p><b>macOS пишет «не удалось проверить разработчика»?</b> Откройте «Системные настройки» → «Конфиденциальность
-          и безопасность» и нажмите «Всё равно открыть». Для новых образов нужен Chrome или Edge; танцует Кай на Mac
-          под Spotify и «Музыку» — macOS один раз спросит, можно ли ему видеть, что играет.</p></div>
-      <div class="note rise only-win" style="--i:3"><span class="i" aria-hidden="true">🛡️</span>
-        <p><b>Windows может спросить, доверяете ли вы программе</b> («Система Windows защитила ваш компьютер») — так бывает
-          со всеми программами без платной цифровой подписи. Нажмите «Подробнее» → «Выполнить в любом случае».
-          Код Кая открыт, его можно посмотреть на <a href="https://github.com/Shoxiazam/kai-pet">GitHub</a>.</p></div>
-    </section>
-
-    <section id="features" aria-labelledby="t-features">
-      <p class="eyebrow">Что умеет</p>
-      <h2 id="t-features">Он не просто сидит — он живёт рядом</h2>
-      <p class="sub measure">Всё, что есть у Кая, работает сразу после установки.</p>
-      <div class="features">
-        <div class="f wide rise" style="--i:0"><div class="ic" aria-hidden="true">😊</div><h3>Эмоции и характер</h3>
-          <p>Следит глазами за мышкой, мурлычет, когда гладите, скучает, если давно не заходили, засыпает в кроватке.</p></div>
-        <div class="f wide rise" style="--i:1"><div class="ic" aria-hidden="true">🎵</div><h3>Танцы под музыку</h3>
-          <p>Spotify, Яндекс Музыка, YouTube — 11 танцев под настроение песни. Под подкасты и звонки не танцует.</p></div>
-        <div class="f rise" style="--i:2"><div class="ic" aria-hidden="true">👕</div><h3>Гардероб</h3>
-          <p>4 вида, 8 цветов и 22 вещи — плюс свои картинки. Переодевается в шкафчике, а не на глазах.</p></div>
-        <div class="f rise" style="--i:3"><div class="ic" aria-hidden="true">🎮</div><h3>Мини-игры</h3>
-          <p>Прятки за окнами, догонялки, камень-ножницы-бумага.</p></div>
-        <div class="f rise" style="--i:4"><div class="ic" aria-hidden="true">🛡️</div><h3>Сторож</h3>
-          <p>Кто-то тронул ноутбук без вас — Кай сфотографирует с веб-камеры.</p></div>
-        <div class="f rise" style="--i:5"><div class="ic" aria-hidden="true">⏱️</div><h3>Фокус и перерывы</h3>
-          <p>Помодоро, отдых для глаз 20-20-20, отчёт за день.</p></div>
-        <div class="f rise" style="--i:6"><div class="ic" aria-hidden="true">🌦️</div><h3>Погода и праздники</h3>
-          <p>Под дождь берёт зонтик, зимой — шапку, в день рождения — корону.</p></div>
-        <div class="f rise" style="--i:7"><div class="ic" aria-hidden="true">💬</div><h3>Команды словами</h3>
-          <p>«Станцуй», «надень шарф», «давай в прятки», «дай пять».</p></div>
-      </div>
-    </section>
-
-    <section aria-labelledby="t-duo">
-      <div class="duo rise">
+    <section id="live" aria-labelledby="t-live">
+      <div class="chapter">
         <div>
-          <p class="eyebrow">Друзья</p>
-          <h2 id="t-duo">Мира, Тоша и Буня приходят в гости</h2>
-          <ul>
-            <li>Заиграла музыка — друг подбегает, они берутся за лапки и танцуют вместе</li>
-            <li>Скажете одному «посмейся» или «дай пять» — сделают оба</li>
-            <li>Почти 80 разговоров на 32 темы, паузы между ними как у живых</li>
-            <li>Иногда спорят, но всегда мирятся</li>
-          <li>У каждого свой голос: Мира звонкая, Тоша басит, Буня пищит</li>
+          <h2 id="t-live">Замечает, что вы делаете</h2>
+          <p class="sub measure">Кай смотрит на программу впереди и звук — и ведёт себя как живой, а не крутит одну анимацию.</p>
+          <ul class="points">
+            <li><span class="badge"><svg class="ic" aria-hidden="true"><use href="#i-music"/></svg></span>
+              <div><b>Танцует под музыку</b><span>Spotify, Яндекс Музыка, YouTube — 11 танцев под настроение песни. Под подкасты и звонки не танцует.</span></div></li>
+            <li><span class="badge"><svg class="ic" aria-hidden="true"><use href="#i-face"/></svg></span>
+              <div><b>Следит глазами и мурлычет</b><span>Смотрит на курсор, мурлычет, когда гладите мышкой, засыпает в кроватке, когда вас нет.</span></div></li>
+            <li><span class="badge"><svg class="ic" aria-hidden="true"><use href="#i-cup"/></svg></span>
+              <div><b>Заботится</b><span>Напомнит о перерыве и отдыхе для глаз, держит фокус-помодоро, вечером расскажет, как прошёл день.</span></div></li>
+            <li><span class="badge"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg></span>
+              <div><b>Сторожит</b><span>Кто-то тронул компьютер без вас — Кай сфотографирует с веб-камеры.</span></div></li>
           </ul>
         </div>
-        <div aria-hidden="true" style="display:grid;place-items:center">
-          <div class="sprite" style="background-image:url(img/duo-hold.png); --n:24; --d:2s"></div>
+        <div class="desk scene" role="img" aria-label="Играет песня — Кай танцует рядом с плеером">
+          <div class="win player"><span class="cover"></span><div><div class="t">Группа крови</div><div class="a">Кино</div>
+            <div class="eq"><i></i><i></i><i></i><i></i></div></div></div>
+          <div class="sprite dance"></div>
         </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="t-friends">
+      <div class="chapter flip">
+        <div>
+          <h2 id="t-friends">Друзья приходят в гости</h2>
+          <p class="sub measure">Лисичка Мира, мишка Тоша или зайка Буня садятся рядом с Каем — и у вас на экране уже целая компания.</p>
+          <ul class="points mintish">
+            <li><span class="badge"><svg class="ic" aria-hidden="true"><use href="#i-hands"/></svg></span>
+              <div><b>Танцуют, держась за лапки</b><span>Заиграла музыка — друг подбегает, они берутся за лапки и меняют движения вместе.</span></div></li>
+            <li><span class="badge"><svg class="ic" aria-hidden="true"><use href="#i-mic"/></svg></span>
+              <div><b>У каждого свой голос</b><span>Мира звонкая, Тоша басит, Буня пищит. Почти 80 разговоров на 32 темы.</span></div></li>
+            <li><span class="badge"><svg class="ic" aria-hidden="true"><use href="#i-paw"/></svg></span>
+              <div><b>Делают всё вместе</b><span>Скажете Каю «посмейся» или «дай пять» — повторит и друг. Иногда спорят, но всегда мирятся.</span></div></li>
+          </ul>
+        </div>
+        <div class="desk scene" role="img" aria-label="Кай и лисичка Мира держатся за лапки"><div class="sprite duo"></div></div>
       </div>
     </section>
 
     <section id="network" aria-labelledby="t-net">
-      <p class="eyebrow">Сеть Каев</p>
-      <h2 id="t-net">Кай ходит в гости к Каю друга</h2>
-      <p class="sub measure">Обменяйтесь кодами дружбы — и ваши Каи смогут навещать друг друга через интернет.</p>
-      <div class="net">
-        <div class="step rise" style="--i:0"><h3>Приглашение</h3><p>Правый клик по Каю → «Друзья по сети» → «Пригласить друга (ссылка)». Друг откроет ссылку, скачает Кая и добавит вас одним нажатием.</p></div>
-        <div class="step rise" style="--i:1"><h3>В гости</h3><p>Ваш Кай берёт табличку «В гостях у…», а у друга на экране появляется гость в вашем наряде: здороваются, танцуют, болтают.</p></div>
-        <div class="step rise" style="--i:2"><h3>Письма и ответы</h3><p>Переписывайтесь через Каев. «Отправить с Каем» — ваш Кай сам отнесёт письмо, подождёт ответ у друга и принесёт его домой.</p></div>
-      </div>
-    </section>
-
-    <section id="stickers" aria-labelledby="t-st">
-      <p class="eyebrow">Стикеры</p>
-      <h2 id="t-st">Кай в Telegram</h2>
-      <p class="sub measure">21 живой стикер: машет, обнимает, смеётся, держит таблички и держит Миру за лапку.</p>
-      <div class="stickers">
-        <figure class="st rise" style="--i:0"><video src="stickers/hello.webm" autoplay loop muted playsinline aria-label="Стикер: Привет"></video><figcaption>Привет</figcaption></figure>
-        <figure class="st rise" style="--i:1"><video src="stickers/love.webm" autoplay loop muted playsinline aria-label="Стикер: Сердечко"></video><figcaption>Сердечко</figcaption></figure>
-        <figure class="st rise" style="--i:2"><video src="stickers/yay.webm" autoplay loop muted playsinline aria-label="Стикер: Ура"></video><figcaption>Ура</figcaption></figure>
-        <figure class="st rise" style="--i:3"><video src="stickers/dance.webm" autoplay loop muted playsinline aria-label="Стикер: Танец"></video><figcaption>Танец</figcaption></figure>
-        <figure class="st rise" style="--i:4"><video src="stickers/laugh.webm" autoplay loop muted playsinline aria-label="Стикер: Смех"></video><figcaption>Смех</figcaption></figure>
-        <figure class="st rise" style="--i:5"><video src="stickers/duo.webm" autoplay loop muted playsinline aria-label="Стикер: За лапки"></video><figcaption>За лапки</figcaption></figure>
-        <figure class="st rise" style="--i:6"><video src="stickers/sign_thanks.webm" autoplay loop muted playsinline aria-label="Стикер: Спасибо"></video><figcaption>Спасибо</figcaption></figure>
-        <figure class="st rise" style="--i:7"><video src="stickers/spin.webm" autoplay loop muted playsinline aria-label="Стикер: Кружится"></video><figcaption>Кружится</figcaption></figure>
-      </div>
-      <div class="row">
-        <a class="btn" id="tg" hidden href="#"><span aria-hidden="true">✈️</span> Добавить в Telegram</a>
-        <a class="ghost" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-stickers.zip">Скачать набор (.webm)</a>
+      <div class="chapter">
+        <div>
+          <h2 id="t-net">Каи ходят в гости и носят письма</h2>
+          <p class="sub measure">Подружите своего Кая с Каями друзей: переписывайтесь, отправляйте Кая с письмом — он подождёт
+            ответ у друга и принесёт его домой.</p>
+          <ul class="points">
+            <li><span class="badge"><svg class="ic" aria-hidden="true"><use href="#i-link"/></svg></span>
+              <div><b>Приглашение ссылкой</b><span>Правый клик по Каю → «Друзья по сети» → «Пригласить друга». Друг скачает Кая и добавит вас одним нажатием.</span></div></li>
+            <li><span class="badge"><svg class="ic" aria-hidden="true"><use href="#i-door"/></svg></span>
+              <div><b>В гости</b><span>У друга на экране появляется ваш Кай в вашем наряде — здороваются, танцуют, болтают.</span></div></li>
+            <li><span class="badge"><svg class="ic" aria-hidden="true"><use href="#i-chat"/></svg></span>
+              <div><b>Письма и открытки</b><span>Переписка с историей; открытка — табличка с вашим текстом в лапах у Кая друга.</span></div></li>
+          </ul>
+        </div>
+        <div class="chat" id="chat" role="img" aria-label="Окно писем: переписка с Мирой и Кай, который вернулся с ответом">
+          <div class="bar"><img src="img/favicon.png" alt="">Письма — Мира</div>
+          <div class="msgs">
+            <div class="msg me" style="--i:0"><b>Вы</b>Привет! Как ты?</div>
+            <div class="msg them" style="--i:1"><b>Мира</b>Отлично! Мой Кай танцует 🙂</div>
+            <div class="msg kai" style="--i:2"><img src="img/favicon.png" alt="">Ваш Кай понёс письмо Мире…</div>
+            <div class="msg me" style="--i:3"><b>Вы</b>Пойдём гулять вечером?</div>
+            <div class="msg kai" style="--i:4"><img src="img/favicon.png" alt="">Кай вернулся с ответом!</div>
+            <div class="msg them" style="--i:5"><b>Мира</b>Давай в пять!</div>
+          </div>
+          <div class="compose"><span>Написать…</span><b><svg class="ic" style="width:18px;height:18px" aria-hidden="true"><use href="#i-paw"/></svg>С Каем</b></div>
+        </div>
       </div>
     </section>
 
     <section aria-labelledby="t-looks">
-      <p class="eyebrow">Внешность</p>
-      <h2 id="t-looks">Какой Кай будет у вас?</h2>
-      <p class="sub measure">Переодевается прямо из меню, новый образ рисуется за 15 секунд.</p>
-      <div class="gallery">
-        <figure class="rise" style="--i:0"><img loading="lazy" src="img/wardrobe_kinds_colors.png" alt="Четыре вида питомца в восьми цветах"><figcaption>4 вида × 8 цветов</figcaption></figure>
-        <figure class="rise" style="--i:1"><img loading="lazy" src="img/wardrobe_combos.png" alt="Питомцы в разных нарядах"><figcaption>Вещи сочетаются</figcaption></figure>
-        <figure class="rise" style="--i:2"><img loading="lazy" src="img/states_grid.png" alt="Пятнадцать эмоций Кая"><figcaption>15 эмоций</figcaption></figure>
+      <h2 id="t-looks">Переодевается в шкафу</h2>
+      <p class="sub measure">4 вида, 8 цветов и 22 вещи — плюс ваши картинки. Кай забегает в шкафчик, шуршит там и выходит
+        уже в обновке, а друг хлопает: «Тебе идёт!»</p>
+      <div class="wardrobe">
+        <a href="img/wardrobe_combos.png"><img loading="lazy" src="img/wardrobe_combos.png" alt="Кай в разных нарядах: шапки, очки, худи, костюм акулёнка" width="768" height="512"></a>
+        <a href="img/wardrobe_kinds_colors.png"><img loading="lazy" src="img/wardrobe_kinds_colors.png" alt="Четыре вида питомца в восьми цветах" width="2048" height="1024"></a>
       </div>
+    </section>
+
+    <section id="stickers" aria-labelledby="t-st">
+      <div class="chapter flip">
+        <div>
+          <h2 id="t-st">Кай в Telegram</h2>
+          <p class="sub measure">21 живой стикер: машет, обнимает, смеётся, держит таблички и держит Миру за лапку.</p>
+          <div class="row">
+            <a class="btn mint" id="tg" hidden href="#"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg>Добавить в Telegram</a>
+            <a class="link" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-stickers.zip">Скачать набор стикеров (.webm)</a>
+          </div>
+        </div>
+        <div class="tg" role="img" aria-label="Стикеры Кая в чате">
+          <div class="grid">
+            <video src="stickers/hello.webm" autoplay loop muted playsinline aria-hidden="true"></video>
+            <video src="stickers/love.webm" autoplay loop muted playsinline aria-hidden="true"></video>
+            <video src="stickers/duo.webm" autoplay loop muted playsinline aria-hidden="true"></video>
+            <video src="stickers/yay.webm" autoplay loop muted playsinline aria-hidden="true"></video>
+            <video src="stickers/laugh.webm" autoplay loop muted playsinline aria-hidden="true"></video>
+            <video src="stickers/sign_thanks.webm" autoplay loop muted playsinline aria-hidden="true"></video>
+            <video src="stickers/dance.webm" autoplay loop muted playsinline aria-hidden="true"></video>
+            <video src="stickers/spin.webm" autoplay loop muted playsinline aria-hidden="true"></video>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="install" aria-labelledby="t-install">
+      <h2 id="t-install">Установка за минуту</h2>
+      <p class="sub measure">Ничего дополнительно ставить не нужно. Обновления Кай потом ставит сам.</p>
+      <ol class="steps only-win">
+        <li><b>Скачайте</b><span>«Скачать для Windows» — загрузится KaiPet-Setup.exe.</span></li>
+        <li><b>Установите</b><span>Откройте файл и нажмите «Установить». Можно сразу включить запуск вместе с Windows.</span></li>
+        <li><b>Готово</b><span>Кай появится в углу экрана. Правый клик по нему — меню, игры, друзья и гардероб.</span></li>
+      </ol>
+      <ol class="steps only-mac">
+        <li><b>Скачайте</b><span>«Скачать для Mac» — загрузится KaiPet-macOS.dmg.</span></li>
+        <li><b>Перетащите</b><span>Откройте .dmg и перетащите Кая в папку «Программы».</span></li>
+        <li><b>Откройте</b><span>Первый раз: правый клик по Каю → «Открыть». Дальше запускается как обычно.</span></li>
+      </ol>
+      <p class="note only-win"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg>
+        <span><b>Windows спросит, доверяете ли вы программе</b> («Система Windows защитила ваш компьютер») — так бывает со всеми
+          программами без платной цифровой подписи. Нажмите «Подробнее» → «Выполнить в любом случае». Код Кая открыт
+          на <a href="https://github.com/Shoxiazam/kai-pet">GitHub</a>.</span></p>
+      <p class="note only-mac"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg>
+        <span><b>macOS пишет «не удалось проверить разработчика»?</b> «Системные настройки» → «Конфиденциальность и безопасность» →
+          «Всё равно открыть». Для новых образов нужен Chrome или Edge; танцует Кай на Mac под Spotify и «Музыку».</span></p>
     </section>
 
     <section id="faq" aria-labelledby="t-faq">
-      <p class="eyebrow">Вопросы</p>
-      <h2 id="t-faq">Коротко о главном</h2>
-      <div class="faq measure" style="max-width:760px">
-        <details class="rise" style="--i:0"><summary>Это бесплатно? Есть реклама?</summary><p>Бесплатно и без рекламы. Код открыт, лицензия MIT.</p></details>
-        <details class="rise" style="--i:1"><summary>Как обновлять?</summary><p>Никак — Кай раз в день сам проверяет новую версию и предлагает обновиться в один клик. Проверить вручную: значок Кая у часов → «Проверить обновления».</p></details>
-        <details class="rise" style="--i:2"><summary>Нужен ли интернет?</summary><p>Только для погоды, обновлений и сети Каев. Всё остальное работает на вашем компьютере и никуда не отправляется.</p></details>
-        <details class="rise" style="--i:2"><summary>Что уходит в интернет в сети Каев?</summary><p>Только то, что нужно для визита: имя, которое вы сами указали, наряд Кая и текст открытки. Сообщения идут через бесплатный сервис ntfy.sh по вашему длинному коду дружбы. Сеть выключена, пока вы сами не добавите друга; гостей и открытки принимает только от друзей, а чужой запрос дружбы Кай сначала покажет вам.</p></details>
-        <details class="rise" style="--i:3"><summary>Не будет ли тормозить компьютер?</summary><p>Кай лёгкий: обычно 1–2 % процессора. Спрятать его можно значком у часов.</p></details>
-        <details class="rise" style="--i:4"><summary>Как удалить?</summary><p>Параметры Windows → Приложения → «Кай» → Удалить.</p></details>
-        <details class="rise" style="--i:5"><summary>Есть версия для Mac?</summary><p>Да, для Mac на Apple M1 и новее — KaiPet-macOS.dmg. На Mac Кай танцует под Spotify и «Музыку» (громкость других программ macOS не показывает), а в прятках прячется за краем экрана. На Linux Кая можно запустить из исходников.</p></details>
+      <h2 id="t-faq">Вопросы</h2>
+      <div class="faq">
+        <details><summary>Это бесплатно? Есть реклама?<svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></summary><p>Бесплатно и без рекламы. Код открыт, лицензия MIT.</p></details>
+        <details><summary>Как обновлять?<svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></summary><p>На Windows Кай раз в день сам проверяет новую версию и предлагает обновиться в один клик. На Mac — новым .dmg с этой страницы.</p></details>
+        <details><summary>Что уходит в интернет?<svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></summary><p>Только погода, проверка обновлений и сеть Каев. В сети Каев — имя, которое вы сами указали, наряд Кая и текст писем; они идут через бесплатный сервис ntfy.sh по вашему длинному коду дружбы. Сеть выключена, пока вы сами не добавите друга, и принимает письма только от друзей.</p></details>
+        <details><summary>Не будет ли тормозить компьютер?<svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></summary><p>Кай лёгкий: обычно 1–2 % процессора. Спрятать его можно значком у часов.</p></details>
+        <details><summary>Как удалить?<svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></summary><p>Windows: «Параметры» → «Приложения» → «Кай» → «Удалить». Mac: перетащите Кая из «Программ» в корзину.</p></details>
+        <details><summary>А Linux?<svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></summary><p>На Linux Кая можно запустить из исходников — инструкция на GitHub.</p></details>
       </div>
     </section>
 
-    <div class="final rise">
-      <div class="sprite" style="background-image:url(img/kai-heart.png); --n:24; --d:1s" aria-hidden="true"></div>
-      <h2>Кай ждёт вас</h2>
-      <p class="sub measure">Установка займёт меньше минуты.</p>
-      <a class="btn" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-Setup.exe">Скачать бесплатно</a>
-    </div>
+    <section class="final" aria-labelledby="t-final">
+      <div class="desk" role="img" aria-label="Кай показывает сердечко"><div class="sprite heart"></div></div>
+      <h2 id="t-final">Кай ждёт вас</h2>
+      <p class="sub measure">Установка займёт меньше минуты, а Кай останется надолго.</p>
+      <a class="btn" id="download2" href="https://github.com/Shoxiazam/kai-pet/releases/latest/download/KaiPet-Setup.exe">
+        <svg class="ic" aria-hidden="true"><use href="#i-down"/></svg><span>Скачать Кая</span></a>
+    </section>
   </main>
 
   <footer><span>Кай — открытый проект</span>
@@ -354,34 +447,35 @@
       · <a href="https://github.com/Shoxiazam/kai-pet/releases">Все версии</a></span></footer>
 </div>
 <script>
-  document.body.classList.remove('no-js');
-  // Mac — своя кнопка и свои шаги установки.
+  document.documentElement.classList.add('js');
   const isMac = /Mac/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '')
     && !/iPhone|iPad/i.test(navigator.userAgent);
+  const d = document.getElementById('download');
   if (isMac) {
     document.body.classList.add('is-mac');
-    const d = document.getElementById('download');
     d.href = d.dataset.mac;
     document.getElementById('download-label').textContent = 'Скачать для Mac';
-    document.querySelectorAll('.final .btn').forEach(b => b.href = d.dataset.mac);
   }
-  // Появление: первый экран — сразу, остальное — когда доедет до экрана (один раз).
-  const items = document.querySelectorAll('.rise');
-  if ('IntersectionObserver' in window) {
-    const io = new IntersectionObserver(es => es.forEach(e => {
-      if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
-    }), { rootMargin: '0px 0px -8% 0px' });
-    items.forEach(el => io.observe(el));
-  } else items.forEach(el => el.classList.add('in'));
+  document.getElementById('download2').href = d.href;
 
-  // Кнопка скачивания: отклик, что загрузка пошла.
+  // Отклик кнопки скачивания.
   const status = document.getElementById('status');
-  document.querySelectorAll('a.btn').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#download, #download2').forEach(b => b.addEventListener('click', () => {
     b.setAttribute('aria-busy', 'true');
     status.textContent = isMac ? 'Скачивание началось — откройте KaiPet-macOS.dmg и перетащите Кая в «Программы».'
                                : 'Скачивание началось — откройте KaiPet-Setup.exe, когда загрузится.';
     setTimeout(() => b.removeAttribute('aria-busy'), 1500);
   }));
+
+  // Единственный момент страницы: письма в окне появляются по одному, когда окно доехало до экрана.
+  const chat = document.getElementById('chat');
+  setTimeout(() => chat.classList.add('play'), 12000);   // не долистали — письма всё равно покажутся
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver(es => es.forEach(e => {
+      if (e.isIntersecting) { chat.classList.add('play'); io.disconnect(); }
+    }), { threshold: .45 });
+    io.observe(chat);
+  } else chat.classList.add('play');
 
   // Набор в Telegram: адрес появляется в stickers/telegram.json, когда набор создан ботом.
   fetch('stickers/telegram.json').then(r => r.ok ? r.json() : null).then(c => {
@@ -390,7 +484,7 @@
     }
   }).catch(() => {});
 
-  // Версия и размер последнего выпуска. Если выпуска с установщиком ещё нет — ведём на страницу всех версий.
+  // Версия и размер последнего выпуска; нет установщика в выпуске — ведём на страницу всех версий.
   fetch('https://api.github.com/repos/Shoxiazam/kai-pet/releases/latest')
     .then(r => r.ok ? r.json() : Promise.reject(r.status))
     .then(rel => {
@@ -401,11 +495,10 @@
       document.getElementById('meta').textContent = isMac
         ? `Версия ${v} · macOS на Apple M1 и новее · ${Math.round(a.size / 1048576)} МБ`
         : `Версия ${v} · Windows 10 и 11 · ${Math.round(a.size / 1048576)} МБ · без прав администратора`;
-      document.getElementById('ver').textContent = `Версия ${v}: друзья, танцы вдвоём, обновление в один клик`;
     })
     .catch(err => {
-      if (err !== 'no-setup') return;          // GitHub не ответил — оставляем ссылку как есть
-      document.querySelectorAll('a.btn').forEach(b => b.href = 'https://github.com/Shoxiazam/kai-pet/releases');
+      if (err !== 'no-setup') return;
+      document.querySelectorAll('#download, #download2').forEach(b => b.href = 'https://github.com/Shoxiazam/kai-pet/releases');
     });
 </script>
 </body>
