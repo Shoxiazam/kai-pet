@@ -38,7 +38,7 @@ from PySide6.QtGui import QAction, QColor, QCursor, QDesktopServices, QFont, QGu
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QInputDialog, QMenu, QWidget
 
-from . import commands, guard, sounds
+from . import achievements, commands, guard, sounds
 from .bubble import Bubble
 from .config import Config
 from .host import MAC, data_dir, keep_visible, mac_idle_s, mac_now_playing
@@ -1134,6 +1134,9 @@ class Pet(QWidget):
             self.angle = 0
         self._snapped = False
         self._place_saved(str(state.get("pos", "")))
+        self.ach = achievements.Achievements(self, load_state, save_state)
+        self._ach_ready = False                   # празднуем после запуска, а не посреди него
+        QTimer.singleShot(4000, self._ach_start)
         self._mark_day()
         self.play("wave")
         self._timer = QTimer(self)
@@ -1368,6 +1371,7 @@ class Pet(QWidget):
         self.play("purr", 2)
         self._sound("purr")
         self._tell_friend("petted")
+        self.ach.bump("petted")
         if time.monotonic() - self._last_pet_friend > 60:
             self._last_pet_friend = time.monotonic()
             self._befriend(1)
@@ -1385,7 +1389,30 @@ class Pet(QWidget):
         self._sound("munch")
         self.speak("Ням! Спасибо за печеньку!", 5000)
         self._tell_friend("fed")
+        self.ach.bump("fed")
         self._befriend(3)
+
+    def _ach_start(self) -> None:
+        self._ach_ready = True
+        for key in getattr(self, "_ach_waiting", []):
+            self.achieved(key)
+        self._ach_waiting = []
+
+    def achieved(self, key: str) -> None:
+        """Новое достижение: Кай радуется, дружба растёт."""
+        if not getattr(self, "_ach_ready", False):
+            self._ach_waiting = [*getattr(self, "_ach_waiting", []), key]
+            return
+        icon, title, about, _, _ = achievements.ACHIEVEMENTS[key]
+        self.play("yay" if self._has_anim("yay") else "heart", 1)
+        self.speak(f"{icon} Достижение «{title}»! ({about})", 9000)
+        self._befriend(2)
+
+    def _has_anim(self, name: str) -> bool:
+        try:
+            return bool(self._files(name)[0])
+        except Exception:                     # noqa: BLE001 — нет такой анимации, берём другую
+            return False
 
     def _befriend(self, points: int) -> None:
         before = friend_level(self.friend)
@@ -1415,6 +1442,7 @@ class Pet(QWidget):
         if state.get("last_day") != today:
             save_state("days", int(state.get("days", 0) or 0) + 1)
             save_state("last_day", today)
+        self.ach.set_at_least("days", int(load_state().get("days", 1) or 1))
 
     def _sound(self, name: str) -> None:
         if self.sounds_on:
@@ -1436,7 +1464,10 @@ class Pet(QWidget):
         self._peaks.append(level)
         self._levels.append(level)
         loud = sum(p > MUSIC_LEVEL for p in self._peaks) >= MUSIC_NEED
+        was = self.music
         self.music = loud and is_music(self._apps, self._media_title, self._levels)   # речь, звонок, игра — нет
+        if self.music and not was:
+            self.ach.bump("dances")
         if not self.music:
             self._style_at = 0.0
         elif time.monotonic() - self._style_at > STYLE_EVERY_S:
@@ -1448,6 +1479,8 @@ class Pet(QWidget):
     def set_status(self, status: str) -> None:
         """idle | working | waiting — что сейчас делает ваш ассистент."""
         self._touch()
+        if status == "working" and self.loop != "working":
+            self.ach.bump("tasks")
         self.loop = status if status in ("working", "waiting") else "idle"
         if self.loop == "working" and not self.bubble.asking:
             self.bubble.hide()                 # реплика не должна закрывать экран, пока ассистент кликает
@@ -1602,6 +1635,9 @@ class Pet(QWidget):
         """Раз в 2 секунды: программа впереди, ритм работы, новый день."""
         now = time.monotonic()
         idle = input_idle_s()
+        badge = achievements.time_badges(datetime.datetime.now())
+        if badge and idle < 60:
+            self.ach.bump(badge)
         if idle >= self.cfg.away_after_min * 60:
             if not self.away:
                 self.away, self.away_since = True, now - idle
@@ -1939,6 +1975,9 @@ class Pet(QWidget):
         """Добавка к утреннему приветствию (например, напоминания ассистента). Переопределяется."""
         return ""
 
+    def morning_said(self, text: str) -> None:
+        """Приветствие сказано облачком; ассистент может произнести его голосом. Переопределяется."""
+
     def _cute(self, now: float, idle: float) -> None:
         if self.away or idle >= 3 * 60:
             return
@@ -1953,6 +1992,7 @@ class Pet(QWidget):
                 parts.append(extra)
             self.play("stretch")
             self.speak(" ".join(parts), 12000)
+            self.morning_said(" ".join(parts))
             return
         if self.missing and not self._missing_said and self.loop == "idle" and not self.once:
             self._missing_said = True
@@ -2285,6 +2325,9 @@ class Pet(QWidget):
         self._toggle(weather, "Одеваться по погоде", self.weather_on, lambda on: self._set_flag("weather", "weather_on", on))
         menu.addSeparator()
         menu.addAction(self.friendship_text()).setEnabled(False)
+        trophies = menu.addMenu(self.ach.summary())
+        for line in self.ach.lines():
+            trophies.addAction(line).setEnabled(line.startswith("🔒") is False)
         menu.addAction("Выход").triggered.connect(lambda _c=False: self.quit_requested.emit())
         self._show_menu(menu, e.globalPos())
 

@@ -25,7 +25,7 @@ from PySide6.QtCore import QObject, QPoint, QProcess, QProcessEnvironment, QTime
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QInputDialog, QMenu, QMessageBox
 
-from . import mail
+from . import achievements, mail
 
 if TYPE_CHECKING:
     from .pet import Pet
@@ -392,6 +392,7 @@ class Network(QObject):
             self._sign_before = self.pet.sign_text
             self.pet.play("bye")
             self.pet.speak(f"Пошёл в гости к {name}!", 5000)
+            achievements.bump(self.pet, "visits")
             self.pet.sign_text = clean_text(f"В гостях у {name}", 60)   # не сохраняем — это ненадолго
             self.pet.update()
             QTimer.singleShot(AWAY_MAX_S * 1000, self, lambda: self._back(name, quiet=True))
@@ -401,6 +402,7 @@ class Network(QObject):
         if text and self.send(box, "card", text=text):
             self.pet.gesture("heart", 1)
             self.pet.speak(f"Открытку отправил: «{text}»", 5000)
+            achievements.bump(self.pet, "cards")
 
     def _back(self, name: str, quiet: bool = False, reply: str = "", box: str = "") -> None:
         if self.away != name:
@@ -609,6 +611,7 @@ class Network(QObject):
         from .pet import NEWEST_ANIM, look_id
         if self.guest is not None or not self.pet.isVisible():
             return                                             # один гость за раз; спрятанный Кай гостей не принимает
+        achievements.bump(self.pet, "guests")
         folder = self.guests_dir() / look_id(look)
         if (folder / "frames" / NEWEST_ANIM).is_dir():
             self._arrive(sender, who, folder, letter)

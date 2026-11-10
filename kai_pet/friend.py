@@ -18,7 +18,7 @@ from PySide6.QtCore import QObject, QPoint, QProcess, QProcessEnvironment, Qt, Q
 from PySide6.QtGui import QCursor, QPainter, QPixmap
 from PySide6.QtWidgets import QMenu, QWidget
 
-from . import talks
+from . import achievements, talks
 from .bubble import Bubble
 
 if TYPE_CHECKING:
@@ -304,6 +304,8 @@ class Friends(QObject):
     # --- позвать / отпустить ---
     def invite(self, who: str = "", greet: bool = True) -> None:
         from .pet import look_id, normalize_look
+        if greet:
+            achievements.bump(self.pet, "buddies")
         who = who if who in FRIENDS else self.who
         if self.here and who == self.who:
             self.widget.play("wave")

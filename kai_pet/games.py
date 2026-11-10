@@ -12,6 +12,8 @@ from PySide6.QtCore import QObject, QPoint, QPropertyAnimation, QRect, Qt, QTime
 from PySide6.QtGui import QCursor, QPainter, QPixmap
 from PySide6.QtWidgets import QMessageBox, QWidget
 
+from . import achievements
+
 if TYPE_CHECKING:
     from .pet import Pet
 
@@ -129,6 +131,7 @@ class Games(QObject):
     def start(self, game: str) -> None:
         if self.active or not self.pet.isVisible():
             return
+        achievements.bump(self.pet, "games")
         if game == "rps":
             self.rps()
         elif game == "seek":
@@ -161,6 +164,7 @@ class Games(QObject):
 
     def reward(self, points: int) -> None:
         """Очки дружбы за победу — с дневным пределом."""
+        achievements.bump(self.pet, "wins")
         from .pet import load_state, save_state
         today = datetime.date.today().isoformat()
         state = load_state()
